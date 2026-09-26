@@ -289,6 +289,175 @@ class LoggingTests(unittest.TestCase):
         self.assertIn("status=rejected rule=support-required", text)
 
 
+class SpecScenarioTests(unittest.TestCase):
+    """One test per scenario in the Validator acceptance checklist."""
+
+    def test_basic_official_pass_stable(self):
+        # 1 official source, no contradiction, stable across 2 runs.
+        out = validate_facts([fact("https://ads.amazon/a",
+                                   "The Amazon Ads API is a REST API.", **stable())])
+        self.assertEqual(out[0]["confidence_score"], 0.7)  # 0.6 + 0.1
+        self.assertEqual(out[0]["status"], "valid")
+
+    def test_basic_community_pass_two_agreeing_quality_sources(self):
+        # Community sources with 3+ people agreeing; each fact sees ONE
+        # additional corroborating source: 0.3 + 0.15 = 0.45.
+        claim = "Amazon Marketing Stream delivers near real-time metrics."
+        out = validate_facts([
+            fact("https://forum.example/t1", claim, source_type="community",
+                 community_agree_count=3),
+            fact("https://forum.example/t2", claim, source_type="community",
+                 community_agree_count=3),
+        ])
+        for f in out:
+            self.assertEqual(f["confidence_score"], 0.45)
+            self.assertEqual(f["status"], "valid_low_confidence")
+
+    def test_three_agreeing_quality_community_sources_cross_into_valid(self):
+        # Same setup with three sources: each sees TWO corroborators, so the
+        # (capped) bonus is +0.30, not +0.15 -> 0.3 + 0.3 = 0.60 -> valid.
+        claim = "Amazon Marketing Stream delivers near real-time metrics."
+        out = validate_facts([
+            fact(f"https://forum.example/t{i}", claim, source_type="community",
+                 community_agree_count=3) for i in range(3)
+        ])
+        for f in out:
+            self.assertEqual(f["confidence_score"], 0.6)
+            self.assertEqual(f["status"], "valid")
+
+    def test_reject_threshold_is_inclusive_at_030(self):
+        # Exactly 0.30 -> valid_low_confidence, not rejected.
+        single = validate_facts([fact("https://forum.example/t",
+                                      "Stream needs an AWS account.",
+                                      source_type="community",
+                                      community_agree_count=3)])
+        self.assertEqual(single[0]["confidence_score"], 0.3)
+        self.assertEqual(single[0]["status"], "valid_low_confidence")
+        # Two weak agreeing sources also land exactly on 0.30: 0.15 + 0.15.
+        pair = validate_facts([
+            fact("https://blog.example/a", "Stream needs an AWS account.",
+                 source_type="community", community_agree_count=1),
+            fact("https://forums.example/b", "Stream needs an AWS account.",
+                 source_type="community", community_agree_count=1),
+        ])
+        for f in pair:
+            self.assertEqual(f["confidence_score"], 0.3)
+            self.assertEqual(f["status"], "valid_low_confidence")
+        # Just below the line (0.25 = 0.15 + 0.10 stability, but unsupported)
+        # -> rejected.
+        below = validate_facts([fact("https://blog.example/c",
+                                     "Stream needs an AWS account.",
+                                     source_type="community",
+                                     community_agree_count=2, **stable())])
+        self.assertEqual(below[0]["confidence_score"], 0.25)
+        self.assertEqual(below[0]["status"], "rejected")
+
+    def test_true_rejection_weak_mentions_without_agreement(self):
+        # 1-2 weak community mentions that do NOT corroborate each other.
+        out = validate_facts([
+            fact("https://blog.example/a", "Sponsored Brands supports audio ads.",
+                 source_type="community", community_agree_count=1),
+            fact("https://forums.example/b", "Sponsored Display supports radio ads.",
+                 source_type="community", community_agree_count=1),
+        ])
+        for f in out:
+            self.assertEqual(f["confidence_score"], 0.15)
+            self.assertEqual(f["status"], "rejected")
+            self.assertIn("reason", f)
+
+    def test_two_weak_agreeing_sources_forced_low_confidence(self):
+        claim = "Sponsored Display audience bidding increases conversion rate."
+        out = validate_facts([
+            fact("https://blog.example/a", claim, source_type="community",
+                 community_agree_count=1),
+            fact("https://forums.example/b", claim, source_type="community",
+                 community_agree_count=1),
+        ])
+        for f in out:
+            self.assertEqual(f["status"], "valid_low_confidence")
+            self.assertIn("low-quality community", f["reason"])
+
+    def test_quality_cap_overrides_raw_score(self):
+        # Force the raw score above 0.6 by patching the low-quality base:
+        # the cap must still hold -- raw score can never buy valid status.
+        claim = "Sponsored Display audience bidding increases conversion rate."
+        with patch("pipeline.validator.BASE_COMMUNITY_LOW", 60):
+            out = validate_facts([
+                fact("https://blog.example/a", claim, source_type="community",
+                     community_agree_count=1),
+                fact("https://forums.example/b", claim, source_type="community",
+                     community_agree_count=1),
+            ])
+        for f in out:
+            self.assertEqual(f["confidence_score"], 0.75)  # raw 0.6 + 0.15
+            self.assertEqual(f["status"], "valid_low_confidence")  # capped anyway
+
+    def test_authority_overrides_majority_of_three(self):
+        # 1 official says A; 3 community sources (3 people each) say B. The
+        # community version's raw score reaches 0.60 and it is the majority --
+        # it is still rejected, never averaged or voted against the official.
+        official_claim = "Sponsored Brands campaigns require an active storefront."
+        community_claim = "Sponsored Brands campaigns do not require an active storefront."
+        out = validate_facts([
+            fact("https://ads.amazon/a", official_claim),
+            *[fact(f"https://forum.example/t{i}", community_claim,
+                   source_type="community", community_agree_count=3)
+              for i in range(3)],
+        ])
+        self.assertEqual(out[0]["status"], "valid")
+        self.assertEqual(out[0]["confidence_score"], 0.6)  # rivals don't corroborate
+        for f in out[1:]:
+            self.assertEqual(f["confidence_score"], 0.6)   # majority, yet...
+            self.assertEqual(f["status"], "rejected")
+            self.assertIn("official", f["reason"])
+
+    def test_cross_page_contradiction_with_topic_and_high_score(self):
+        # Two officials in the same topic disagree; a third corroborates one
+        # side, pushing its raw score to 0.85 -- neither may reach valid.
+        claim_a = "Application approval may take up to 1 business day."
+        claim_b = "Application approval may take up to 5 business days."
+        out = validate_facts([
+            fact("https://ads.amazon/a", claim_a, topic_id="onboarding", **stable()),
+            fact("https://ads.amazon/c", claim_a, topic_id="onboarding", **stable()),
+            fact("https://ads.amazon/b", claim_b, topic_id="onboarding", **stable()),
+        ])
+        self.assertEqual(out[0]["confidence_score"], 0.85)  # corroborated + stable
+        for f in out:
+            self.assertEqual(f["status"], "valid_low_confidence")
+            self.assertIn("contradict", f["reason"])
+
+    def test_stability_bonus_tips_low_confidence_to_valid(self):
+        # With the shipped constants no natural score sits at 0.50-0.59 for a
+        # supported fact, so widen the stability step to make the tipping
+        # observable: 0.30 + 0.15 corroboration + 0.15 stability = 0.60.
+        claim = "Amazon Marketing Stream delivers near real-time metrics."
+        facts = [
+            fact("https://forum.example/t1", claim, source_type="community",
+                 community_agree_count=3, **stable()),
+            fact("https://forum.example/t2", claim, source_type="community",
+                 community_agree_count=3, **stable()),
+        ]
+        with patch("pipeline.validator.STABILITY_BONUS", 15):
+            tipped = validate_facts(copy.deepcopy(facts))
+            untipped = validate_facts([
+                {**f, "is_changed": "Y", "last_run": None} for f in facts])
+        self.assertEqual(tipped[0]["status"], "valid")       # 0.45 + 0.15 = 0.60
+        self.assertEqual(tipped[0]["confidence_score"], 0.6)
+        self.assertEqual(untipped[0]["status"], "valid_low_confidence")  # 0.45
+
+    def test_corroboration_capped_with_four_extra_sources(self):
+        # 1 official + 4 additional corroborating sources: bonus is +0.30
+        # (capped), not +0.60.
+        claim = "Sponsored Brands campaigns support video creative assets."
+        out = validate_facts([fact("https://ads.amazon/a", claim)] +
+                             [fact(f"https://mirror.example/{c}", claim)
+                              for c in "bcde"])
+        self.assertEqual(out[0]["confidence_score"], 0.9)  # 0.6 + 0.3, not 1.2
+        self.assertEqual(out[0]["status"], "valid")
+        for f in out[1:]:
+            self.assertEqual(f["confidence_score"], 0.9)
+
+
 class ContractTests(unittest.TestCase):
     def test_not_a_list_rejected(self):
         with self.assertRaises(ValidationError):
