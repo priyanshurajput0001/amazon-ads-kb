@@ -3,3 +3,8 @@
 
 # Claude Code machine-local permissions
 .claude/settings.local.json
+
+# OS / Python artifacts
+.DS_Store
+__pycache__/
+*.py[cod]

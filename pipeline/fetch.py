@@ -8,6 +8,9 @@ Chain (first success wins, failures recorded, never fatal to the batch):
 Every result carries the strategy used so provenance can note how it was
 fetched. JS-rendered SPA pages often fail the whole chain; callers should
 route those to a browser-based fetcher (e.g. Playwright MCP) when available.
+
+fetch_many_with_state() wraps fetch_many() with persistent change detection
+(see pipeline/state.py).
 """
 
 from __future__ import annotations
@@ -18,7 +21,11 @@ import os
 import shutil
 import subprocess
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
+
+from pipeline.state import update_state
 
 TVLY_TIMEOUT = 60  # seconds, matches --timeout upper bound
 DIRECT_TIMEOUT = 30
@@ -118,3 +125,22 @@ def fetch_many(urls: list[str], fetched_at: str) -> list[dict]:
         except FetchError:
             out.append({"url": url, "ok": False, "error": "all fetch strategies failed"})
     return out
+
+
+DEFAULT_STATE_PATH = Path(__file__).resolve().parents[1] / "state" / "fetch_state.json"
+
+
+def fetch_many_with_state(
+    urls: list[str],
+    fetched_at: str,
+    state_path: str | Path | None = None,
+    fetcher: Callable[[list[str], str], list[dict]] = fetch_many,
+) -> list[dict]:
+    """fetch_many() + persistent change detection (see pipeline/state.py).
+
+    Each result dict gains a `change` verdict: new | unchanged | changed |
+    error. fetch_url()/fetch_many() themselves are unchanged.
+    """
+    results = fetcher(urls, fetched_at)
+    verdicts = update_state(state_path or DEFAULT_STATE_PATH, results, fetched_at)
+    return [{**result, "change": verdicts[result["url"]]} for result in results]
