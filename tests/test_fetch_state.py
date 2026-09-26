@@ -46,6 +46,7 @@ class FetchManyWithStateTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.state_path = Path(self._tmp.name) / "fetch_state.json"
+        self.cache_path = Path(self._tmp.name) / "cache"
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -53,7 +54,8 @@ class FetchManyWithStateTests(unittest.TestCase):
     def run_batch(self, urls, fetched_at, batch):
         fetcher = ScriptedFetcher(batch)
         results = fetch_many_with_state(
-            urls, fetched_at, state_path=self.state_path, fetcher=fetcher)
+            urls, fetched_at, state_path=self.state_path, fetcher=fetcher,
+            cache_path=self.cache_path)
         return results, fetcher
 
     def test_first_run_marks_every_url_new(self):

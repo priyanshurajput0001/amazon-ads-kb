@@ -26,6 +26,7 @@ class CliTests(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.state_path = Path(self._tmp.name) / "fetch_state.json"
+        self.cache_path = Path(self._tmp.name) / "cache"
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -36,7 +37,8 @@ class CliTests(unittest.TestCase):
             return batch
         out, err = io.StringIO(), io.StringIO()
         with redirect_stdout(out), redirect_stderr(err):
-            code = main(argv, state_path=self.state_path, fetcher=fake_fetcher)
+            code = main(argv, state_path=self.state_path, fetcher=fake_fetcher,
+                        cache_path=self.cache_path)
         return code, [json.loads(line) for line in out.getvalue().splitlines()]
 
     def test_requires_at_least_one_url(self):

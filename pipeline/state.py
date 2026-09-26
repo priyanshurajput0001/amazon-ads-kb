@@ -140,3 +140,20 @@ def update_state(path: str | Path, results: list[dict], fetched_at: str) -> dict
     verdicts = {r["url"]: apply_result(states, r, fetched_at) for r in results}
     save_state(path, states)
     return verdicts
+
+
+def cache_content(
+    cache_dir: str | Path, content: str, sha256: str, content_type: str = "markdown"
+) -> Path:
+    """Persist fetched content to <cache_dir>/<sha256>.<ext> (content-addressed).
+
+    Idempotent: a file for an already-seen hash is never rewritten, so
+    historical versions accumulate instead of being overwritten. Only
+    successful fetches reach this function.
+    """
+    ext = "md" if content_type == "markdown" else "html"
+    path = Path(cache_dir) / f"{sha256}.{ext}"
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    return path

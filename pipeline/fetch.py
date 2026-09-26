@@ -28,7 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from pipeline.state import update_state
+from pipeline.state import cache_content, update_state
 
 TVLY_TIMEOUT = 60  # seconds, matches --timeout upper bound
 DIRECT_TIMEOUT = 30
@@ -131,6 +131,7 @@ def fetch_many(urls: list[str], fetched_at: str) -> list[dict]:
 
 
 DEFAULT_STATE_PATH = Path(__file__).resolve().parents[1] / "state" / "fetch_state.json"
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parents[1] / "state" / "cache"
 
 
 def fetch_many_with_state(
@@ -138,21 +139,33 @@ def fetch_many_with_state(
     fetched_at: str,
     state_path: str | Path | None = None,
     fetcher: Callable[[list[str], str], list[dict]] = fetch_many,
+    cache_path: str | Path | None = None,
 ) -> list[dict]:
-    """fetch_many() + persistent change detection (see pipeline/state.py).
+    """fetch_many() + persistent change detection + content cache.
 
     Each result dict gains a `change` verdict: new | unchanged | changed |
-    error. fetch_url()/fetch_many() themselves are unchanged.
+    error, plus the `cache_path` the content was saved under (None for
+    failed fetches). fetch_url()/fetch_many() themselves are unchanged.
     """
     results = fetcher(urls, fetched_at)
     verdicts = update_state(state_path or DEFAULT_STATE_PATH, results, fetched_at)
-    return [{**result, "change": verdicts[result["url"]]} for result in results]
+    out = []
+    for result in results:
+        cached = None
+        if result.get("ok"):
+            cached = cache_content(cache_path or DEFAULT_CACHE_PATH,
+                                   result["content"], result["sha256"],
+                                   result.get("content_type", "markdown"))
+        out.append({**result, "change": verdicts[result["url"]],
+                    "cache_path": str(cached) if cached else None})
+    return out
 
 
 def main(
     argv: list[str] | None = None,
     state_path: str | Path | None = None,
     fetcher: Callable[[list[str], str], list[dict]] = fetch_many,
+    cache_path: str | Path | None = None,
 ) -> int:
     """CLI entry point: python3 -m pipeline.fetch URL [URL ...]
 
@@ -168,7 +181,8 @@ def main(
 
     fetched_at = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
     results = fetch_many_with_state(args.urls, fetched_at,
-                                    state_path=state_path, fetcher=fetcher)
+                                    state_path=state_path, fetcher=fetcher,
+                                    cache_path=cache_path)
     for r in results:
         print(json.dumps({
             "url": r["url"],
@@ -178,6 +192,7 @@ def main(
             "strategy": r.get("strategy"),
             "content_length": len(r["content"]) if "content" in r else None,
             "error": r.get("error"),
+            "cache_path": r.get("cache_path"),
         }))
     return 0
 
