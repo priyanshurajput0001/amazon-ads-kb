@@ -15,11 +15,14 @@ fetch_many_with_state() wraps fetch_many() with persistent change detection
 
 from __future__ import annotations
 
+import argparse
+import datetime
 import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -68,7 +71,7 @@ def _tvly_extract(url: str, depth: str, fetched_at: str) -> FetchResult | None:
     if shutil.which("tvly") is None:
         return None
     cmd = ["tvly", "extract", url, "--format", "markdown", "--json",
-           "--extract-depth", depth, "--timeout", str(TVLY_TIMEOUT)]
+           "--extract-depth", depth]
     env = dict(os.environ)
     env["PATH"] = env.get("PATH", "") + os.pathsep + os.path.expanduser("~/.local/bin")
     try:
@@ -144,3 +147,40 @@ def fetch_many_with_state(
     results = fetcher(urls, fetched_at)
     verdicts = update_state(state_path or DEFAULT_STATE_PATH, results, fetched_at)
     return [{**result, "change": verdicts[result["url"]]} for result in results]
+
+
+def main(
+    argv: list[str] | None = None,
+    state_path: str | Path | None = None,
+    fetcher: Callable[[list[str], str], list[dict]] = fetch_many,
+) -> int:
+    """CLI entry point: python3 -m pipeline.fetch URL [URL ...]
+
+    Prints one JSON object per URL. Individual URL failures show up as
+    "ok": false in their JSON; the exit code stays 0. Non-zero exit means
+    the CLI itself failed (bad arguments, unreadable state file, ...).
+    """
+    parser = argparse.ArgumentParser(
+        description="Fetch URLs and record per-URL change state.")
+    parser.add_argument("urls", nargs="+", metavar="URL",
+                        help="one or more URLs to fetch")
+    args = parser.parse_args(argv)
+
+    fetched_at = datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds")
+    results = fetch_many_with_state(args.urls, fetched_at,
+                                    state_path=state_path, fetcher=fetcher)
+    for r in results:
+        print(json.dumps({
+            "url": r["url"],
+            "ok": r["ok"],
+            "verdict": r["change"],
+            "sha256": r.get("sha256"),
+            "strategy": r.get("strategy"),
+            "content_length": len(r["content"]) if "content" in r else None,
+            "error": r.get("error"),
+        }))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
