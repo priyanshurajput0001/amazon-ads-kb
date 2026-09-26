@@ -1,0 +1,76 @@
+{
+  "claims": [
+    {
+      "claim": "The Amazon Ads API enables managing the advertising resources associated with an Amazon advertiser using a REST API.",
+      "confidence": "high",
+      "quote": "The Amazon Ads API enables you to manage the advertising resources associated with an Amazon advertiser using a REST API.",
+      "topic_hint": "amazon-ads-api-overview"
+    },
+    {
+      "claim": "Using the Amazon Ads API requires applying for access and being approved.",
+      "confidence": "high",
+      "quote": "To use the Amazon Ads API, you must apply for access and be approved.",
+      "topic_hint": "amazon-ads-api-onboarding"
+    },
+    {
+      "claim": "Direct advertisers, partners, and integrators are all eligible to apply for Amazon Ads API access.",
+      "confidence": "high",
+      "quote": "Direct advertisers, partners, and integrators are all eligible to apply.",
+      "topic_hint": "amazon-ads-api-onboarding"
+    },
+    {
+      "claim": "Approved applicants establish a client application through Login with Amazon (LwA) that serves as a credential for requests to the Amazon Ads API.",
+      "confidence": "high",
+      "quote": "Approved applicants can establish a _client application_ through [Login with Amazon (LwA)](https://developer.amazon.com/docs/login-with-amazon/conceptual-overview.html) that serves as a credential for requests to the Amazon Ads API.",
+      "topic_hint": "amazon-ads-api-onboarding"
+    },
+    {
+      "claim": "Establishing a client application for the Amazon Ads API does not require specific technical expertise and consists of three steps.",
+      "confidence": "high",
+      "quote": "This process does not require specific technical expertise. It includes three steps:",
+      "topic_hint": "amazon-ads-api-onboarding"
+    },
+    {
+      "claim": "Requests to the Amazon Ads API are made by a client application administered by Login with Amazon.",
+      "confidence": "high",
+      "quote": "Requests to the Amazon Ads API are made by a client application administered by Login with Amazon.",
+      "topic_hint": "amazon-ads-api-onboarding"
+    },
+    {
+      "claim": "The Login with Amazon client application is free to create, and no approval is required to create it.",
+      "confidence": "high",
+      "quote": "The client application is free to create, and no approval is required for this step.",
+      "topic_hint": "amazon-ads-api-onboarding"
+    },
+    {
+      "claim": "The Amazon Ads API access application form asks how a business intends to use the API and includes information about the Amazon Ads API License Agreement and the Data Protection Policy.",
+      "confidence": "high",
+      "quote": "The application form includes questions about how your business intends to use the Amazon Ads API, as well as information about the [Amazon Ads API License Agreement](https://advertising.amazon.com/API/docs/license-agreement) and the [Data Protection Policy](https://advertising.amazon.com/API/docs/policy/en_US).",
+      "topic_hint": "amazon-ads-api-onboarding"
+    },
+    {
+      "claim": "Amazon Ads API application approval may take up to 1 business day.",
+      "confidence": "high",
+      "quote": "Application approval may take up to 1 business day.",
+      "topic_hint": "amazon-ads-api-onboarding"
+    },
+    {
+      "claim": "Once an application is approved, the user enables their LwA client application to make requests to the API.",
+      "confidence": "high",
+      "quote": "Once your application is approved, you will enable your LwA client application to make requests to the API.",
+      "topic_hint": "amazon-ads-api-onboarding"
+    },
+    {
+      "claim": "Amazon provides a technical support page for assistance with connecting to the Amazon Ads API.",
+      "confidence": "medium",
+      "quote": "If you have difficulty connecting to the Amazon Ads API, visit our [technical support page](https://advertising.amazon.com/API/docs/en-us/support/overview) for information about assistance.",
+      "topic_hint": "amazon-ads-api-support"
+    }
+  ],
+  "extracted_at": "2026-09-26T12:52:09+00:00",
+  "fetched_at": "2026-09-26T11:19:52+00:00",
+  "schema_version": 1,
+  "sha256": "5fde7c601e983dbbeeb4af08d17abeb23778cec380384c3ed5b920962e242d3a",
+  "source_url": "https://advertising.amazon.com/API/docs/en-us/guides/onboarding/overview",
+  "status": "ok"
+}
