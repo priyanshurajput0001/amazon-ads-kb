@@ -1,0 +1,142 @@
+{
+  "claims": [
+    {
+      "claim": "The Amazon Ads API enables users to plan, activate, and measure programmatic media strategies on Amazon more effectively and at scale.",
+      "confidence": "high",
+      "quote": "Building applications through the Amazon Ads API gives you the ability to plan, activate, and measure programmatic media strategies on Amazon more effectively and at scale.",
+      "topic_hint": "amazon-ads-api-overview"
+    },
+    {
+      "claim": "The Amazon Ads API provides direct access to Amazon's signals, supply, and technology to support customization and scaled management and reporting of advertising.",
+      "confidence": "high",
+      "quote": "The Amazon Ads API serves as a bridge to provide direct access to Amazon’s signals, supply, and technology to unlock more customization and scaled opportunities for managing and reporting on advertising.",
+      "topic_hint": "amazon-ads-api-overview"
+    },
+    {
+      "claim": "The Amazon Ads API allows advertisers to manage campaigns and report on their advertising activity with Amazon in a programmatic and scalable way.",
+      "confidence": "high",
+      "quote": "Building applications through the Amazon Ads API gives you the ability to manage campaigns and report on your advertising activity with Amazon in a programmatic and scalable way.",
+      "topic_hint": "amazon-ads-api-overview"
+    },
+    {
+      "claim": "Amazon Ads API integrations enable building custom reporting dashboards, automatic bid and keyword optimizations, and always-on budget optimization.",
+      "confidence": "high",
+      "quote": "APIs allow the building of custom reporting dashboards, automatic bid and keyword optimizations, always-on budget optimization, and more customized solutions to fit your business needs.",
+      "topic_hint": "amazon-ads-api-use-cases"
+    },
+    {
+      "claim": "Through the Amazon Ads API, users can create custom rules, gather more detailed reporting, and run automated campaign, budget, and bid optimizations.",
+      "confidence": "high",
+      "quote": "Through the use of APIs, you can create custom rules, gather more detailed reporting, and allow for automated campaign, budget, and bid optimizations to make the most of advertising efforts.",
+      "topic_hint": "amazon-ads-api-use-cases"
+    },
+    {
+      "claim": "API integrations give programmatic access to Amazon Ads products including sponsored ads, streaming TV, Amazon DSP, Amazon Marketing Cloud (AMC), and Amazon Marketing Stream.",
+      "confidence": "high",
+      "quote": "API integrations gives you programmatic access to Amazon Ads products like [sponsored ads](https://advertising.amazon.com/products/sponsored-ads?ref_=a20m_us_p_api_p_sa), [streaming TV](https://advertising.amazon.com/solutions/products/streaming-tv-ads?ref_=a20m_us_p_api_p_stv), [Amazon DSP](https://advertising.amazon.com/solutions/products/amazon-dsp?ref_=a20m_us_p_api_p_dsp), [Amazon Marketing Cloud (AMC)](https://advertising.amazon.com/solutions/products/amazon-marketing-cloud?ref_=a20m_us_p_api_p_amc), and [Amazon Marketing Stream](https://advertising.amazon.com/solutions/products/amazon-marketing-stream?ref_=a20m_us_p_api_p_ams).",
+      "topic_hint": "amazon-ads-api-supported-products"
+    },
+    {
+      "claim": "Typical Amazon Ads API users are advertising solution providers, agencies with internal engineering resources managing significant campaign volume, and advertisers with internal engineering resources running a significant volume of Amazon Ads campaigns.",
+      "confidence": "high",
+      "quote": "Typical users include:\n\n* Advertising solution providers who integrate with the API and offer paid management and reporting tools to agencies and advertisers who lack the development resources and bandwidth to directly integrate with the Amazon Ads API\n* Agencies that have internal engineering resources and that manage a significant volume of advertising campaigns for advertising clients\n* Advertisers who manage their ad spend, have internal engineering resources, and directly run a significant volume of Amazon Ads campaigns",
+      "topic_hint": "amazon-ads-api-access"
+    },
+    {
+      "claim": "The Amazon Ads API requires an application and approval process before access is granted.",
+      "confidence": "high",
+      "quote": "The Amazon Ads API requires an application and approval process before access is granted.",
+      "topic_hint": "amazon-ads-api-access"
+    },
+    {
+      "claim": "Businesses that build applications and software solutions to automate and help optimize advertising on behalf of others can access the Amazon Ads API as a third party and license their application to others.",
+      "confidence": "high",
+      "quote": "Businesses that build applications and software solutions to automate and help optimize advertising on behalf of others can access the Amazon Ads API as a third party. Request registration to call the Amazon Ads API and license your application to others.",
+      "topic_hint": "amazon-ads-api-access"
+    },
+    {
+      "claim": "Direct advertisers can request registration to access the Amazon Ads API on behalf of their own advertising account to automate, scale, and optimize advertising activities and reporting.",
+      "confidence": "high",
+      "quote": "Advertisers can use the Amazon Ads API to automate, scale, and optimize advertising activities and reporting. Request registration to access the Amazon Ads API on behalf of your own advertising account.",
+      "topic_hint": "amazon-ads-api-access"
+    },
+    {
+      "claim": "The Amazon Ads API is a REST API for managing the advertising resources associated with an Amazon advertiser.",
+      "confidence": "high",
+      "quote": "The Amazon Ads API enables you to manage the advertising resources associated with an Amazon advertiser using a REST API.",
+      "topic_hint": "amazon-ads-api-overview"
+    },
+    {
+      "claim": "The Amazon Ads API enables Amazon advertisers and members of the Amazon Advertising Partner Network to programmatically manage advertising operations.",
+      "confidence": "high",
+      "quote": "The Amazon Ads API enables Amazon advertisers and members of the Amazon Advertising Partner Network to programmatically manage advertising operations.",
+      "topic_hint": "amazon-ads-api-overview"
+    },
+    {
+      "claim": "In an Amazon Ads case study, the API integration dashboard made it easier for Saras Analytics and BidX to manage their API technology.",
+      "confidence": "medium",
+      "quote": "Learn how the Amazon Ads API integration dashboard makes it easier for Saras Analytics and BidX to manage their API technology.",
+      "topic_hint": "amazon-ads-api-integration-dashboard"
+    },
+    {
+      "claim": "In an Amazon Ads case study, API call success improved from 30% to 98%.",
+      "confidence": "medium",
+      "quote": "Call success improved from 30% to 98%",
+      "topic_hint": "amazon-ads-api-integration-dashboard"
+    },
+    {
+      "claim": "There are no additional fees from Amazon Ads to use the API; the only fees are standard account fees to sell on Amazon and campaign costs for Amazon Ads advertising products.",
+      "confidence": "high",
+      "quote": "There are no additional fees from Amazon Ads to use the API. The only fees include standard account fees to sell on Amazon, as well as the campaign costs for using Amazon Ads advertising products.",
+      "topic_hint": "amazon-ads-api-fees"
+    },
+    {
+      "claim": "Amazon Ads offers test accounts for API development and testing purposes, and ads created in this environment will not show on Amazon.",
+      "confidence": "high",
+      "quote": "We offer [test accounts](https://advertising.amazon.com/API/docs/en-us/guides/account-management/test-accounts/overview?ref_=a20m_us_p_api_faq_atc_tstacct) for development and testing purposes. Ads created in this environment will not show on Amazon",
+      "topic_hint": "amazon-ads-api-test-accounts"
+    },
+    {
+      "claim": "The bulk operations feature is available for sponsored ads and Amazon DSP; sellers access it in Seller Central and vendors access it in the advertising console.",
+      "confidence": "high",
+      "quote": "Alternatively, you can use the [bulk operations](https://advertising.amazon.com/API/docs/en-us/bulksheets/no-code-overview?ref_=a20m_us_p_api_faq_atc_blkops) feature for sponsored ads and Amazon DSP. Sellers can access this in Seller Central, while vendors can access this in the advertising console.",
+      "topic_hint": "amazon-ads-bulk-operations"
+    },
+    {
+      "claim": "The Amazon Ads partner directory lets advertisers filter by criteria like products, marketplaces, or service model to identify a relevant partner.",
+      "confidence": "high",
+      "quote": "The partner directory is an online resource that makes it easy to find a partner that’s right for your business. When searching on the partner directory, you can filter by criteria like “products,” “marketplaces,” or “service model” to identify a partner most relevant to your business.",
+      "topic_hint": "amazon-ads-partner-directory"
+    },
+    {
+      "claim": "Amazon offers an Amazon Ads API Developers Portal containing onboarding materials, documentation, and release notes.",
+      "confidence": "high",
+      "quote": "Yes, we have an [Amazon Ads API Developers Portal](https://advertising.amazon.com/API/docs/en-us/get-started/overview?ref_=a20m_us_api_faq_atc_dv). You’ll find onboarding materials, documentation, release notes, and more.",
+      "topic_hint": "amazon-ads-api-developer-resources"
+    },
+    {
+      "claim": "Amazon offers a GitHub repository (amzn/ads-advanced-tools-docs) for developers.",
+      "confidence": "high",
+      "quote": "We also offer a [Github](https://github.com/amzn/ads-advanced-tools-docs?ref_=a20m_us_p_api_faq_atc_gthb) repository for developers.",
+      "topic_hint": "amazon-ads-api-developer-resources"
+    },
+    {
+      "claim": "Developers building applications with the Amazon Ads API should apply for access; advertisers using a third-party tool that uses the API do not need to request API access.",
+      "confidence": "high",
+      "quote": "Developers interested in building applications using the Amazon Ads API. Advertisers looking to work with a third-party tool that uses the API do not need to request API access.",
+      "topic_hint": "amazon-ads-api-access"
+    },
+    {
+      "claim": "Programmatic advertising is the practice of automating media buying and creating digital ads with the use of marketing technology.",
+      "confidence": "medium",
+      "quote": "Programmatic advertising refers to the practice of automating media buying and creating digital ads with the use of marketing technology.",
+      "topic_hint": "programmatic-advertising"
+    }
+  ],
+  "extracted_at": "2026-09-27T05:37:54+00:00",
+  "fetched_at": "2026-09-27T05:33:54+00:00",
+  "schema_version": 1,
+  "sha256": "e3a9ef200df7e7785e6a24d973877ed2e0dd1ea1fa34fb0f5ab85d8f83061bd9",
+  "source_url": "https://advertising.amazon.com/about-api",
+  "status": "ok"
+}

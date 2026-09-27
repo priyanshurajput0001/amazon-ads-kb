@@ -1,4 +1,10 @@
 {
+  "https://advertising.amazon.com/API/docs/en-us": {
+    "fetched_at": "2026-09-27T05:33:54+00:00",
+    "sha256": "a056338e8f01def16722ff01fb88d4d7c3bcc64520b29b72acf591becdde2121",
+    "status": "ok",
+    "strategy": "tvly-basic"
+  },
   "https://advertising.amazon.com/API/docs/en-us/guides/onboarding/overview": {
     "fetched_at": "2026-09-26T11:19:52+00:00",
     "sha256": "5fde7c601e983dbbeeb4af08d17abeb23778cec380384c3ed5b920962e242d3a",
@@ -10,5 +16,23 @@
     "sha256": "9b74b624bbf5a32dafbea886034ac4e33b3ab73fe8d02998e6639ed64e83827a",
     "status": "ok",
     "strategy": "direct"
+  },
+  "https://advertising.amazon.com/API/docs/en-us/info/release-notes": {
+    "fetched_at": "2026-09-27T05:22:28+00:00",
+    "sha256": "9de198fbe2b1be6fe130c155b6db181671e5daa3944aedafbef291a221bd36b7",
+    "status": "ok",
+    "strategy": "direct"
+  },
+  "https://advertising.amazon.com/about-api": {
+    "fetched_at": "2026-09-27T05:33:54+00:00",
+    "sha256": "e3a9ef200df7e7785e6a24d973877ed2e0dd1ea1fa34fb0f5ab85d8f83061bd9",
+    "status": "ok",
+    "strategy": "tvly-basic"
+  },
+  "https://github.com/amzn": {
+    "fetched_at": "2026-09-27T05:33:54+00:00",
+    "sha256": "5c111ddfde52b2c48ce7b996b3350373966f3e776242aa51925cd30ef6e7a94e",
+    "status": "ok",
+    "strategy": "tvly-basic"
   }
 }

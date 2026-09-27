@@ -1,0 +1,112 @@
+{
+  "claims": [
+    {
+      "claim": "Amazon is offering a new developer track at unBoxed 2026 that includes technical breakout sessions, workshops, and a hackathon.",
+      "confidence": "high",
+      "quote": "Join our new developer track at unBoxed 2026 for technical breakout sessions, workshops, a hackathon, and more.",
+      "topic_hint": "unboxed-2026-developer-track"
+    },
+    {
+      "claim": "The Amazon Ads MCP server is in open beta.",
+      "confidence": "high",
+      "quote": "Our Amazon Ads MCP server is now in open beta.",
+      "topic_hint": "amazon-ads-mcp-server"
+    },
+    {
+      "claim": "The new Amazon Ads reporting API is in open beta.",
+      "confidence": "high",
+      "quote": "New reporting API Open Beta",
+      "topic_hint": "reporting-api-ads-v1"
+    },
+    {
+      "claim": "The new Amazon Ads reporting API offers multi-dimensional, cross-account, and cross ad-product reporting with standardized metrics for ad-hoc use cases.",
+      "confidence": "high",
+      "quote": "Our new reporting API offers multi-dimensional, cross-account, and cross ad-product reporting with standardized metrics for ad-hoc use cases.",
+      "topic_hint": "reporting-api-ads-v1"
+    },
+    {
+      "claim": "Amazon Ads offers technology solutions to help companies scale, manage, and report on their advertising activities.",
+      "confidence": "high",
+      "quote": "Amazon Ads offers technology solutions to help you scale, manage, and report on your advertising activities.",
+      "topic_hint": "amazon-ads-advanced-tools"
+    },
+    {
+      "claim": "The Amazon Ads API enables programmatic management and reporting of Amazon Ads campaigns.",
+      "confidence": "high",
+      "quote": "Manage and report on Amazon Ads campaigns programmatically through our API.",
+      "topic_hint": "amazon-ads-api-overview"
+    },
+    {
+      "claim": "Bulksheets is a spreadsheet-based tool used to manage sponsored ads campaigns.",
+      "confidence": "high",
+      "quote": "Use bulksheets, a spreadsheet-based tool, to manage sponsored ads campaigns.",
+      "topic_hint": "bulksheets-overview"
+    },
+    {
+      "claim": "Amazon Marketing Stream provides hourly campaign metrics and notifications of campaign changes in near real time.",
+      "confidence": "high",
+      "quote": "Get hourly campaign metrics and notifications of campaign changes in near real time.",
+      "topic_hint": "amazon-marketing-stream-overview"
+    },
+    {
+      "claim": "Amazon Marketing Cloud enables analytics and audience building across pseudonymized signals to address marketing and business priorities.",
+      "confidence": "high",
+      "quote": "Perform analytics and build audiences across pseudonymized signals to address top marketing and business priorities.",
+      "topic_hint": "amazon-marketing-cloud-overview"
+    },
+    {
+      "claim": "The campaign management API in the new Amazon Ads API v1 creates campaigns across different ad products using a consistent campaign model.",
+      "confidence": "high",
+      "quote": "Use the new campaign management API to create campaigns across different ad products using a consistent campaign model.",
+      "topic_hint": "campaign-management-v1"
+    },
+    {
+      "claim": "Export APIs provide campaign management information in a common model and format across sponsored ads products.",
+      "confidence": "high",
+      "quote": "Export APIs offer campaign management information in a common model and format across sponsored ads products.",
+      "topic_hint": "export-apis"
+    },
+    {
+      "claim": "Export APIs will replace the deprecated snapshots APIs.",
+      "confidence": "high",
+      "quote": "Export APIs will replace the deprecated snapshots APIs.",
+      "topic_hint": "export-apis"
+    },
+    {
+      "claim": "The Amazon Ads API integration dashboard is used to monitor and manage Amazon Ads API integrations.",
+      "confidence": "medium",
+      "quote": "Monitor and better manage your Amazon Ads API integration.",
+      "topic_hint": "api-integration-dashboard"
+    },
+    {
+      "claim": "Amazon provides a series of eight bulksheets video tutorials with guidelines and tips for success.",
+      "confidence": "medium",
+      "quote": "A series of eight video tutorials with guidelines and tips for success.",
+      "topic_hint": "bulksheets-video-tutorials"
+    },
+    {
+      "claim": "The Amazon Ads API global expansion guide is designed to help integrators expand their advertising to new locales.",
+      "confidence": "medium",
+      "quote": "A guide designed to help integrators expand their advertising to new locales.",
+      "topic_hint": "global-expansion-guide"
+    },
+    {
+      "claim": "The advanced tools guide introduces Amazon Ads advanced tools to help scale businesses.",
+      "confidence": "medium",
+      "quote": "A guide to introduce you to Amazon Ads advanced tools to help scale your business.",
+      "topic_hint": "advanced-tools-guide"
+    },
+    {
+      "claim": "Amazon provides a guide to help advertisers consider new opportunities to further their technological capabilities with the Amazon Ads API.",
+      "confidence": "high",
+      "quote": "This guide will help you consider new opportunities to further your technological capabilities with the Amazon Ads API.",
+      "topic_hint": "advancing-api-integration-guide"
+    }
+  ],
+  "extracted_at": "2026-09-27T05:25:29+00:00",
+  "fetched_at": "2026-09-27T05:22:28+00:00",
+  "schema_version": 1,
+  "sha256": "a056338e8f01def16722ff01fb88d4d7c3bcc64520b29b72acf591becdde2121",
+  "source_url": "https://advertising.amazon.com/API/docs/en-us",
+  "status": "ok"
+}

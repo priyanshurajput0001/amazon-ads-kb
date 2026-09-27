@@ -1,0 +1,40 @@
+{
+  "claims": [
+    {
+      "claim": "Amazon maintains a GitHub organization at github.com/amzn that lists its open-source repositories.",
+      "confidence": "high",
+      "quote": "# Amazon",
+      "topic_hint": "amazon-github-organization"
+    },
+    {
+      "claim": "The Amazon GitHub organization hosts a repository whose description is \"Code samples and supplements for the Amazon Ads advanced tools center\".",
+      "confidence": "high",
+      "quote": "Code samples and supplements for the Amazon Ads advanced tools center",
+      "topic_hint": "amazon-ads-advanced-tools-center"
+    },
+    {
+      "claim": "The amzn/selling-partner-api-docs repository contains documentation for developers to use to call Selling Partner APIs.",
+      "confidence": "high",
+      "quote": "This repository contains documentation for developers to use to call Selling Partner APIs.",
+      "topic_hint": "selling-partner-api-docs"
+    },
+    {
+      "claim": "The amzn/selling-partner-api-models repository contains OpenAPI models for developers to use when developing software to call Selling Partner APIs.",
+      "confidence": "high",
+      "quote": "This repository contains OpenAPI models for developers to use when developing software to call Selling Partner APIs.",
+      "topic_hint": "selling-partner-api-models"
+    },
+    {
+      "claim": "The Amazon GitHub organization lists a repository described as \"The official SDK for Amazon Selling Partner API\".",
+      "confidence": "medium",
+      "quote": "The official SDK for Amazon Selling Partner API",
+      "topic_hint": "selling-partner-api-sdk"
+    }
+  ],
+  "extracted_at": "2026-09-27T05:26:35+00:00",
+  "fetched_at": "2026-09-27T05:22:28+00:00",
+  "schema_version": 1,
+  "sha256": "5c111ddfde52b2c48ce7b996b3350373966f3e776242aa51925cd30ef6e7a94e",
+  "source_url": "https://github.com/amzn",
+  "status": "ok"
+}
