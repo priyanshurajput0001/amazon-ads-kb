@@ -1,0 +1,461 @@
+# PHASE 3 — DE-DUPLICATION EVIDENCE
+# Date: 2026-09-27 17:23:27 UTC
+# Driver script source follows, then its full output.
+
+```python
+"""PHASE 3 evidence driver — de-duplication proof, real LLM classification.
+
+Part A: end-to-end run through orchestrate() with the fetch seam serving two
+        DIFFERENT fixture URLs that state the SAME logical fact in different
+        wording. Real claude CLI extraction, real adapter, real validator,
+        real merger (real claude pair classification), real publisher.
+        Shows what the real Extractor produced (claims + topic_hints), what
+        the real Merger decided, and how many documents were published.
+
+Part B: canonical duplicate pair pushed through validate -> merge -> publish
+        with the REAL claude classifier, including the RAW classification
+        answer for the pair.
+
+Everything runs inside /tmp/kb-evidence sandboxes; the repository's state/
+and knowledge/ are never touched.
+"""
+import hashlib
+import json
+import logging
+import shutil
+import sys
+from pathlib import Path
+
+REPO = Path("/Users/priyanshurajput/amazon-ads-kb")
+sys.path.insert(0, str(REPO))
+
+from pipeline.extractor import claude_cli_extract  # noqa: E402  (real seam)
+from pipeline.fetch import FetchResult  # noqa: E402
+from pipeline.merger import claude_cli_classify, merge_facts  # noqa: E402
+from pipeline.orchestrate import orchestrate  # noqa: E402
+from pipeline.publisher import publish_facts  # noqa: E402
+from pipeline.validator import validate_facts  # noqa: E402
+
+logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                    format="%(levelname)s %(name)s: %(message)s")
+
+ROOT = Path("/tmp/kb-evidence")
+
+URL_A = "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a"
+URL_B = "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b"
+
+# Same logical fact (default 10 requests/s per account), DIFFERENT wording.
+MD_A = ("# Amazon Ads API rate limits\n\n"
+        "The Amazon Ads API enforces a default rate limit of 10 requests per "
+        "second per account.\n")
+MD_B = ("# API throttling\n\n"
+        "Amazon Ads API requests are limited to 10 requests per second for "
+        "each account by default.\n")
+
+
+def sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def fixture_fetcher(pages: dict):
+    def _fetch(urls, fetched_at):
+        out = []
+        for u in urls:
+            content = pages[u]
+            out.append(FetchResult(
+                url=u, strategy="verification-fixture", content_type="markdown",
+                title=None, content=content, sha256=sha(content),
+                fetched_at=fetched_at).to_json() | {"ok": True})
+        return out
+    return _fetch
+
+
+def fresh(name: str) -> dict:
+    base = ROOT / name
+    if base.exists():
+        shutil.rmtree(base)
+    return {"state": base / "fetch_state.json", "cache": base / "cache",
+            "claims": base / "claims", "knowledge": base / "knowledge"}
+
+
+def section(title: str) -> None:
+    print("\n" + "=" * 72 + "\n" + title + "\n" + "=" * 72, flush=True)
+
+
+# ==========================================================================
+section("PART A — end-to-end: two URLs, same logical fact, different wording")
+# ==========================================================================
+print("Fixture content:")
+print(f"  {URL_A}\n    {MD_A!r}")
+print(f"  {URL_B}\n    {MD_B!r}")
+
+paths = fresh("dedup-sandbox-A")
+report = orchestrate(
+    [URL_A, URL_B], state_path=paths["state"], cache_path=paths["cache"],
+    claims_path=paths["claims"], knowledge_dir=paths["knowledge"],
+    fetcher=fixture_fetcher({URL_A: MD_A, URL_B: MD_B}))
+print("\nOrchestrator report:")
+print(json.dumps(report, indent=2, ensure_ascii=False))
+
+print("\nExtracted claims (what the REAL claude extractor produced):")
+for cf in sorted(Path(paths["claims"]).glob("*.json")):
+    doc = json.loads(cf.read_text())
+    print(f"  source: {doc['source_url']}")
+    for c in doc["claims"]:
+        print(f"    claim:       {c['claim']}")
+        print(f"    quote:       {c['quote']}")
+        print(f"    topic_hint:  {c['topic_hint']}   confidence: {c['confidence']}")
+
+print("\nPublished knowledge documents:")
+for p in sorted(Path(paths["knowledge"]).glob("*.md")):
+    if p.name in ("INDEX.md", "CHANGELOG.md"):
+        continue
+    print(f"\n----- {p.name} -----")
+    print(p.read_text(encoding="utf-8"))
+
+doc_count = len([p for p in Path(paths["knowledge"]).glob("*.md")
+                 if p.name not in ("INDEX.md", "CHANGELOG.md")])
+verdict_a = {
+    "facts_adapted": report.get("facts", {}).get("adapted"),
+    "facts_valid": report.get("facts", {}).get("valid"),
+    "merge_input": report.get("merge", {}).get("input"),
+    "merge_output": report.get("merge", {}).get("output"),
+    "published": report.get("publish", {}).get("published"),
+    "updated": report.get("publish", {}).get("updated"),
+    "final_document_count": doc_count,
+    "second_copy_created": doc_count > 1,
+}
+print("\nPART A VERDICT:")
+print(json.dumps(verdict_a, indent=2))
+
+# ==========================================================================
+section("PART B — canonical duplicate pair, REAL classifier, raw answer shown")
+# ==========================================================================
+paths_b = fresh("dedup-sandbox-B")
+now = "2026-09-27T23:00:00+00:00"
+base = {
+    "date": now, "is_changed": "Y", "last_run": None,
+    "source_type": "official", "community_agree_count": 0,
+    "topic_id": "amazon-ads-api-rate-limit",
+}
+facts = [
+    {**base, "url": URL_A,
+     "content": "The Amazon Ads API enforces a default rate limit of 10 "
+                "requests per second per account."},
+    {**base, "url": URL_B,
+     "content": "Amazon Ads API requests are limited to 10 requests per "
+                "second for each account by default."},
+]
+print("Input facts (Validator input shape, same topic_id):")
+print(json.dumps(facts, indent=2))
+
+validated = validate_facts(facts)
+print("\nValidated (confidence_score / status):")
+print(json.dumps([{k: f[k] for k in
+                   ("url", "content", "confidence_score", "status")}
+                  for f in validated], indent=2))
+
+raw_label = claude_cli_classify(validated[0], validated[1])
+print(f"\n>>> RAW claude_cli_classify ANSWER FOR THE PAIR: {raw_label!r}")
+
+merged = merge_facts(validated)  # real claude classification inside
+print(f"\nMerged facts: {len(merged)} (input was {len(validated)})")
+print(json.dumps([{k: f.get(k) for k in
+                   ("content", "resolution", "confidence_score", "status",
+                    "sources")}
+                  for f in merged], indent=2))
+
+published = publish_facts(merged, knowledge_dir=paths_b["knowledge"])
+print("\nPublisher report:")
+print(json.dumps(published, indent=2))
+
+print("\nPublished documents:")
+for p in sorted(Path(paths_b["knowledge"]).glob("*.md")):
+    if p.name in ("INDEX.md", "CHANGELOG.md"):
+        continue
+    print(f"\n----- {p.name} -----")
+    print(p.read_text(encoding="utf-8"))
+
+dup_doc = [f for f in merged if f.get("resolution") == "duplicate_merged"]
+verdict_b = {
+    "raw_llm_label": raw_label,
+    "duplicate_detected_by_real_llm": bool(dup_doc),
+    "merged_fact_count": len(merged),
+    "resolution": merged[0].get("resolution") if merged else None,
+    "sources_on_merged_fact": len(merged[0]["sources"]) if merged else 0,
+    "published": published.get("published"),
+    "final_document_count": published.get("published", 0),
+    "second_copy_created": published.get("published", 0) > 1,
+}
+print("\nPART B VERDICT:")
+print(json.dumps(verdict_b, indent=2))
+```
+
+$ python3 /tmp/kb-evidence/dedup_experiment.py
+
+
+========================================================================
+PART A — end-to-end: two URLs, same logical fact, different wording
+========================================================================
+Fixture content:
+  https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a
+    '# Amazon Ads API rate limits\n\nThe Amazon Ads API enforces a default rate limit of 10 requests per second per account.\n'
+  https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b
+    '# API throttling\n\nAmazon Ads API requests are limited to 10 requests per second for each account by default.\n'
+INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a: 1 facts (source_type=official, is_changed=Y)
+INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b: 1 facts (source_type=official, is_changed=Y)
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a group=topic:api-rate-limits score=0.60 status=valid rule=score-band
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b group=topic:api-rate-limits score=0.60 status=valid rule=score-band
+INFO pipeline.merger: merge group of 2 -> resolution=duplicate_merged status=valid sources=2
+INFO pipeline.publisher: published kb-729977e2290f9316 at amazon-ads-api-enforces-default-rate-limit-10-requests-per.md (duplicate_merged)
+INFO pipeline.publisher: report: 1 input -> 1 published, 0 updated, 0 unchanged, 0 skipped, 0 renamed
+
+Orchestrator report:
+{
+  "urls": [
+    {
+      "url": "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a",
+      "fetch": {
+        "ok": true,
+        "verdict": "new",
+        "strategy": "verification-fixture"
+      },
+      "extract": {
+        "status": "ok",
+        "claim_count": 1,
+        "skipped": false
+      },
+      "adapter": {
+        "status": "ok",
+        "fact_count": 1
+      }
+    },
+    {
+      "url": "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b",
+      "fetch": {
+        "ok": true,
+        "verdict": "new",
+        "strategy": "verification-fixture"
+      },
+      "extract": {
+        "status": "ok",
+        "claim_count": 1,
+        "skipped": false
+      },
+      "adapter": {
+        "status": "ok",
+        "fact_count": 1
+      }
+    }
+  ],
+  "stages_executed": [
+    "fetch",
+    "adapter",
+    "validator",
+    "merger",
+    "publisher"
+  ],
+  "facts": {
+    "adapted": 2,
+    "valid": 2,
+    "valid_low_confidence": 0,
+    "rejected": 0
+  },
+  "merge": {
+    "input": 2,
+    "output": 1
+  },
+  "publish": {
+    "input": 1,
+    "published": 1,
+    "updated": 0,
+    "unchanged": 0,
+    "skipped": 0,
+    "renamed": 0,
+    "index_updated": true,
+    "documents": [
+      "/tmp/kb-evidence/dedup-sandbox-A/knowledge/amazon-ads-api-enforces-default-rate-limit-10-requests-per.md"
+    ],
+    "last_run": "2026-09-27T17:23:27+00:00"
+  },
+  "knowledge_bundle_modified": true
+}
+
+Extracted claims (what the REAL claude extractor produced):
+  source: https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a
+    claim:       The Amazon Ads API enforces a default rate limit of 10 requests per second per account.
+    quote:       The Amazon Ads API enforces a default rate limit of 10 requests per second per account.
+    topic_hint:  api-rate-limits   confidence: high
+  source: https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b
+    claim:       Amazon Ads API requests are limited to 10 requests per second for each account by default.
+    quote:       Amazon Ads API requests are limited to 10 requests per second for each account by default.
+    topic_hint:  api-rate-limits   confidence: high
+
+Published knowledge documents:
+
+----- amazon-ads-api-enforces-default-rate-limit-10-requests-per.md -----
+---
+id: kb-729977e2290f9316
+title: The Amazon Ads API enforces a default rate limit of 10 requests per second per account.
+sources:
+  - https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a
+  - https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b
+confidence: high
+status: official
+last_checked: 2026-09-27
+---
+
+# The Amazon Ads API enforces a default rate limit of 10 requests per second per account.
+
+## Details
+
+The Amazon Ads API enforces a default rate limit of 10 requests per second per account.
+
+- confidence_score: 0.60
+- resolution: duplicate_merged
+- status: valid
+
+## Sources
+- https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a — official, fetched 2026-09-27T17:23:27+00:00
+- https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b — official, fetched 2026-09-27T17:23:27+00:00
+
+
+PART A VERDICT:
+{
+  "facts_adapted": 2,
+  "facts_valid": 2,
+  "merge_input": 2,
+  "merge_output": 1,
+  "published": 1,
+  "updated": 0,
+  "final_document_count": 1,
+  "second_copy_created": false
+}
+
+========================================================================
+PART B — canonical duplicate pair, REAL classifier, raw answer shown
+========================================================================
+Input facts (Validator input shape, same topic_id):
+[
+  {
+    "date": "2026-09-27T23:00:00+00:00",
+    "is_changed": "Y",
+    "last_run": null,
+    "source_type": "official",
+    "community_agree_count": 0,
+    "topic_id": "amazon-ads-api-rate-limit",
+    "url": "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a",
+    "content": "The Amazon Ads API enforces a default rate limit of 10 requests per second per account."
+  },
+  {
+    "date": "2026-09-27T23:00:00+00:00",
+    "is_changed": "Y",
+    "last_run": null,
+    "source_type": "official",
+    "community_agree_count": 0,
+    "topic_id": "amazon-ads-api-rate-limit",
+    "url": "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b",
+    "content": "Amazon Ads API requests are limited to 10 requests per second for each account by default."
+  }
+]
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a group=topic:amazon-ads-api-rate-limit score=0.60 status=valid rule=score-band
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b group=topic:amazon-ads-api-rate-limit score=0.60 status=valid rule=score-band
+
+Validated (confidence_score / status):
+[
+  {
+    "url": "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a",
+    "content": "The Amazon Ads API enforces a default rate limit of 10 requests per second per account.",
+    "confidence_score": 0.6,
+    "status": "valid"
+  },
+  {
+    "url": "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b",
+    "content": "Amazon Ads API requests are limited to 10 requests per second for each account by default.",
+    "confidence_score": 0.6,
+    "status": "valid"
+  }
+]
+
+>>> RAW claude_cli_classify ANSWER FOR THE PAIR: 'duplicate'
+INFO pipeline.merger: merge group of 2 -> resolution=duplicate_merged status=valid sources=2
+
+Merged facts: 1 (input was 2)
+[
+  {
+    "content": "The Amazon Ads API enforces a default rate limit of 10 requests per second per account.",
+    "resolution": "duplicate_merged",
+    "confidence_score": 0.6,
+    "status": "valid",
+    "sources": [
+      {
+        "url": "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a",
+        "date": "2026-09-27T23:00:00+00:00",
+        "source_type": "official"
+      },
+      {
+        "url": "https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b",
+        "date": "2026-09-27T23:00:00+00:00",
+        "source_type": "official"
+      }
+    ]
+  }
+]
+INFO pipeline.publisher: published kb-729977e2290f9316 at amazon-ads-api-enforces-default-rate-limit-10-requests-per.md (duplicate_merged)
+INFO pipeline.publisher: report: 1 input -> 1 published, 0 updated, 0 unchanged, 0 skipped, 0 renamed
+
+Publisher report:
+{
+  "input": 1,
+  "published": 1,
+  "updated": 0,
+  "unchanged": 0,
+  "skipped": 0,
+  "renamed": 0,
+  "index_updated": true,
+  "documents": [
+    "/tmp/kb-evidence/dedup-sandbox-B/knowledge/amazon-ads-api-enforces-default-rate-limit-10-requests-per.md"
+  ],
+  "last_run": "2026-09-27T17:24:02+00:00"
+}
+
+Published documents:
+
+----- amazon-ads-api-enforces-default-rate-limit-10-requests-per.md -----
+---
+id: kb-729977e2290f9316
+title: The Amazon Ads API enforces a default rate limit of 10 requests per second per account.
+sources:
+  - https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a
+  - https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b
+confidence: high
+status: official
+last_checked: 2026-09-27
+---
+
+# The Amazon Ads API enforces a default rate limit of 10 requests per second per account.
+
+## Details
+
+The Amazon Ads API enforces a default rate limit of 10 requests per second per account.
+
+- confidence_score: 0.60
+- resolution: duplicate_merged
+- status: valid
+
+## Sources
+- https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-a — official, fetched 2026-09-27T23:00:00+00:00
+- https://advertising.amazon.com/API/docs/en-us/verification/rate-limit-page-b — official, fetched 2026-09-27T23:00:00+00:00
+
+
+PART B VERDICT:
+{
+  "raw_llm_label": "duplicate",
+  "duplicate_detected_by_real_llm": true,
+  "merged_fact_count": 1,
+  "resolution": "duplicate_merged",
+  "sources_on_merged_fact": 2,
+  "published": 1,
+  "final_document_count": 1,
+  "second_copy_created": false
+}

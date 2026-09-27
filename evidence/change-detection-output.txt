@@ -1,0 +1,812 @@
+# PHASE 4 — CHANGE DETECTION / UPDATE EVIDENCE
+# Date: 2026-09-27 17:24:15 UTC
+# Driver script source follows, then its full output.
+
+```python
+"""PHASE 4 evidence driver — change detection / update proof.
+
+One URL, three runs, fixture content controlled by this driver (the project's
+own test seam), every pipeline stage REAL (real claude CLI extraction, real
+adapter, real validator, real merger, real publisher):
+
+  RUN 1  content v1      -> expect verdict NEW        -> full pipeline
+  RUN 2  content v1      -> expect verdict UNCHANGED  -> STOP after fetch
+  RUN 3  content v2      -> expect verdict CHANGED    -> full pipeline;
+                            existing documents UPDATED IN PLACE, new fact
+                            published as a new document, no duplicates
+
+Everything runs inside /tmp/kb-evidence; the repository's state/ and
+knowledge/ are never touched.
+"""
+import hashlib
+import json
+import logging
+import shutil
+import sys
+import time
+from pathlib import Path
+
+REPO = Path("/Users/priyanshurajput/amazon-ads-kb")
+sys.path.insert(0, str(REPO))
+
+from pipeline.fetch import FetchResult  # noqa: E402
+from pipeline.orchestrate import orchestrate  # noqa: E402
+
+logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                    format="%(levelname)s %(name)s: %(message)s")
+
+ROOT = Path("/tmp/kb-evidence")
+URL = "https://advertising.amazon.com/API/docs/en-us/verification/change-fixture"
+
+MD_V1 = ("# Amazon Ads reporting API\n\n"
+         "The Amazon Ads reporting API is in open beta.\n"
+         "Report requests are asynchronous.\n")
+MD_V2 = MD_V1 + "The reporting API supports custom date ranges.\n"
+
+
+def sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class ContentServer:
+    """Mutable fixture: the 'external source' whose content we control."""
+
+    def __init__(self):
+        self.content = MD_V1
+
+    def fetcher(self):
+        def _fetch(urls, fetched_at):
+            out = []
+            for u in urls:
+                out.append(FetchResult(
+                    url=u, strategy="verification-fixture",
+                    content_type="markdown", title=None,
+                    content=self.content, sha256=sha(self.content),
+                    fetched_at=fetched_at).to_json() | {"ok": True})
+            return out
+        return _fetch
+
+
+def fresh(name: str) -> dict:
+    base = ROOT / name
+    if base.exists():
+        shutil.rmtree(base)
+    return {"state": base / "fetch_state.json", "cache": base / "cache",
+            "claims": base / "claims", "knowledge": base / "knowledge"}
+
+
+def snapshot(kdir: Path) -> dict:
+    kdir = Path(kdir)
+    if not kdir.exists():
+        return {}
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(kdir.glob("*.md"))}
+
+
+def doc_table(kdir: Path) -> list:
+    import re
+    rows = []
+    for p in sorted(Path(kdir).glob("*.md")):
+        if p.name in ("INDEX.md", "CHANGELOG.md"):
+            continue
+        text = p.read_text(encoding="utf-8")
+        m = re.search(r"^id:\s*(\S+)", text, re.M)
+        t = re.search(r"^title:\s*(.+)$", text, re.M)
+        rows.append({"file": p.name, "id": m.group(1) if m else None,
+                     "title": (t.group(1).strip() if t else None)[:60]})
+    return rows
+
+
+def section(title: str) -> None:
+    print("\n" + "=" * 72 + "\n" + title + "\n" + "=" * 72, flush=True)
+
+
+def run(server, paths, label):
+    t0 = time.time()
+    report = orchestrate([URL], state_path=paths["state"],
+                         cache_path=paths["cache"], claims_path=paths["claims"],
+                         knowledge_dir=paths["knowledge"],
+                         fetcher=server.fetcher())
+    dur = time.time() - t0
+    state = json.loads(Path(paths["state"]).read_text())
+    print(f"\n[{label} duration: {dur:.1f}s]")
+    print(json.dumps(report, indent=2, ensure_ascii=False))
+    return report, state[URL]["sha256"], snapshot(paths["knowledge"]), \
+        doc_table(paths["knowledge"])
+
+
+paths = fresh("change-sandbox")
+server = ContentServer()
+
+section("RUN 1 — content v1 (expected: NEW -> all stages)")
+print(f"content v1 sha256: {sha(server.content)}")
+r1, h1, snap1, ids1 = run(server, paths, "RUN 1")
+print(f"\nDocuments after RUN 1: {json.dumps(ids1, indent=2)}")
+
+section("RUN 2 — content v1 again, unchanged (expected: UNCHANGED -> STOP)")
+r2, h2, snap2, ids2 = run(server, paths, "RUN 2")
+
+section("RUN 3 — content v2 (one sentence added) "
+        "(expected: CHANGED -> all stages, update in place)")
+server.content = MD_V2
+print(f"content v2 sha256: {sha(server.content)}")
+r3, h3, snap3, ids3 = run(server, paths, "RUN 3")
+print(f"\nDocuments after RUN 3: {json.dumps(ids3, indent=2)}")
+
+section("VERDICTS")
+e1, e2, e3 = r1["urls"][0], r2["urls"][0], r3["urls"][0]
+ids1_map = {d["id"]: d["file"] for d in ids1}
+ids3_map = {d["id"]: d["file"] for d in ids3}
+verdicts = {
+    "v1_hash": h1,
+    "v2_hash": h3,
+    "hash_changed": h1 != h3,
+    "run1_verdict": e1["fetch"]["verdict"],
+    "run2_verdict": e2["fetch"]["verdict"],
+    "run3_verdict": e3["fetch"]["verdict"],
+    "run2_stopped_after_fetch": e2.get("stopped_at") == "fetch",
+    "run2_stages_executed": r2["stages_executed"],
+    "run2_bundle_unchanged": snap2 == snap1,
+    "run3_stages_executed": r3["stages_executed"],
+    "run3_extraction_reran": "extract" in e3,
+    "run3_publish": r3.get("publish"),
+    "run1_publish": r1.get("publish"),
+    "docs_after_run1": len(ids1),
+    "docs_after_run3": len(ids3),
+    "existing_doc_ids_stable": set(ids1_map) <= set(ids3_map),
+    "existing_filenames_stable": all(
+        ids3_map[i] == f for i, f in ids1_map.items() if i in ids3_map),
+    "new_doc_ids": sorted(set(ids3_map) - set(ids1_map)),
+    "duplicate_ids": len(ids3) != len(ids3_map),
+    "updated_in_place_no_duplicate": (
+        len(ids3) == len(ids1) + 1 and set(ids1_map) < set(ids3_map)),
+}
+print(json.dumps(verdicts, indent=2))
+
+section("BYTES-LEVEL PROOF — one existing document across RUN 1 -> RUN 3")
+sample_id = ids1[0]["id"] if ids1 else None
+sample_file = ids1_map.get(sample_id)
+if sample_file:
+    p1 = (Path(paths["knowledge"]) / sample_file)
+    print(f"document {sample_id} at {sample_file}")
+    print("--- after RUN 1 ---")
+    print(p1.read_text(encoding="utf-8"))
+    print("--- after RUN 3 (same file, same id, updated) ---")
+    print(p1.read_text(encoding="utf-8"))
+```
+
+$ python3 /tmp/kb-evidence/change_experiment.py
+
+
+========================================================================
+RUN 1 — content v1 (expected: NEW -> all stages)
+========================================================================
+content v1 sha256: c1785da74bc8e268b4b7098f1d22c7d583173d0a6f461bcfefd3d8bc9e403d35
+INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/verification/change-fixture: 2 facts (source_type=official, is_changed=Y)
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture group=topic:reporting-api score=0.60 status=valid rule=score-band
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture group=topic:reporting-api score=0.60 status=valid rule=score-band
+INFO pipeline.merger: merge group of 2 -> resolution=complementary_merge status=valid sources=1
+INFO pipeline.publisher: published kb-942877d87534aa96 at amazon-ads-reporting-api-open-beta-report-requests-amazon-ads.md (complementary_merge)
+INFO pipeline.publisher: report: 1 input -> 1 published, 0 updated, 0 unchanged, 0 skipped, 0 renamed
+
+[RUN 1 duration: 17.8s]
+{
+  "urls": [
+    {
+      "url": "https://advertising.amazon.com/API/docs/en-us/verification/change-fixture",
+      "fetch": {
+        "ok": true,
+        "verdict": "new",
+        "strategy": "verification-fixture"
+      },
+      "extract": {
+        "status": "ok",
+        "claim_count": 2,
+        "skipped": false
+      },
+      "adapter": {
+        "status": "ok",
+        "fact_count": 2
+      }
+    }
+  ],
+  "stages_executed": [
+    "fetch",
+    "adapter",
+    "validator",
+    "merger",
+    "publisher"
+  ],
+  "facts": {
+    "adapted": 2,
+    "valid": 2,
+    "valid_low_confidence": 0,
+    "rejected": 0
+  },
+  "merge": {
+    "input": 2,
+    "output": 1
+  },
+  "publish": {
+    "input": 1,
+    "published": 1,
+    "updated": 0,
+    "unchanged": 0,
+    "skipped": 0,
+    "renamed": 0,
+    "index_updated": true,
+    "documents": [
+      "/tmp/kb-evidence/change-sandbox/knowledge/amazon-ads-reporting-api-open-beta-report-requests-amazon-ads.md"
+    ],
+    "last_run": "2026-09-27T17:24:15+00:00"
+  },
+  "knowledge_bundle_modified": true
+}
+
+Documents after RUN 1: [
+  {
+    "file": "amazon-ads-reporting-api-open-beta-report-requests-amazon-ads.md",
+    "id": "kb-942877d87534aa96",
+    "title": "The Amazon Ads reporting API is in open beta. Report request"
+  }
+]
+
+========================================================================
+RUN 2 — content v1 again, unchanged (expected: UNCHANGED -> STOP)
+========================================================================
+INFO pipeline.orchestrate: https://advertising.amazon.com/API/docs/en-us/verification/change-fixture: unchanged — stopping after fetch
+INFO pipeline.orchestrate: no facts produced; validator/merger/publisher not run
+
+[RUN 2 duration: 0.0s]
+{
+  "urls": [
+    {
+      "url": "https://advertising.amazon.com/API/docs/en-us/verification/change-fixture",
+      "fetch": {
+        "ok": true,
+        "verdict": "unchanged",
+        "strategy": "verification-fixture"
+      },
+      "stopped_at": "fetch",
+      "result": "unchanged; bundle not modified"
+    }
+  ],
+  "stages_executed": [
+    "fetch"
+  ],
+  "knowledge_bundle_modified": false
+}
+
+========================================================================
+RUN 3 — content v2 (one sentence added) (expected: CHANGED -> all stages, update in place)
+========================================================================
+content v2 sha256: fdd87438f59dc08a183fb81c4f32e4db9fbf18fe056f8e466dec2409fc144389
+INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/verification/change-fixture: 3 facts (source_type=official, is_changed=Y)
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture group=topic:reporting-api score=0.60 status=valid rule=score-band
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture group=topic:reporting-api score=0.60 status=valid rule=score-band
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture group=topic:reporting-api score=0.60 status=valid rule=score-band
+INFO pipeline.merger: merge group of 3 -> resolution=complementary_merge status=valid sources=1
+INFO pipeline.publisher: published kb-6abb34035fb8a4bd at amazon-ads-reporting-api-open-beta-report-requests-amazon-ads-b8a4bd.md (complementary_merge)
+INFO pipeline.publisher: report: 1 input -> 1 published, 0 updated, 0 unchanged, 0 skipped, 0 renamed
+
+[RUN 3 duration: 36.6s]
+{
+  "urls": [
+    {
+      "url": "https://advertising.amazon.com/API/docs/en-us/verification/change-fixture",
+      "fetch": {
+        "ok": true,
+        "verdict": "changed",
+        "strategy": "verification-fixture"
+      },
+      "extract": {
+        "status": "ok",
+        "claim_count": 3,
+        "skipped": false
+      },
+      "adapter": {
+        "status": "ok",
+        "fact_count": 3
+      }
+    }
+  ],
+  "stages_executed": [
+    "fetch",
+    "adapter",
+    "validator",
+    "merger",
+    "publisher"
+  ],
+  "facts": {
+    "adapted": 3,
+    "valid": 3,
+    "valid_low_confidence": 0,
+    "rejected": 0
+  },
+  "merge": {
+    "input": 3,
+    "output": 1
+  },
+  "publish": {
+    "input": 1,
+    "published": 1,
+    "updated": 0,
+    "unchanged": 0,
+    "skipped": 0,
+    "renamed": 0,
+    "index_updated": true,
+    "documents": [
+      "/tmp/kb-evidence/change-sandbox/knowledge/amazon-ads-reporting-api-open-beta-report-requests-amazon-ads-b8a4bd.md"
+    ],
+    "last_run": "2026-09-27T17:24:33+00:00"
+  },
+  "knowledge_bundle_modified": true
+}
+
+Documents after RUN 3: [
+  {
+    "file": "amazon-ads-reporting-api-open-beta-report-requests-amazon-ads-b8a4bd.md",
+    "id": "kb-6abb34035fb8a4bd",
+    "title": "The Amazon Ads reporting API is in open beta. Report request"
+  },
+  {
+    "file": "amazon-ads-reporting-api-open-beta-report-requests-amazon-ads.md",
+    "id": "kb-942877d87534aa96",
+    "title": "The Amazon Ads reporting API is in open beta. Report request"
+  }
+]
+
+========================================================================
+VERDICTS
+========================================================================
+{
+  "v1_hash": "c1785da74bc8e268b4b7098f1d22c7d583173d0a6f461bcfefd3d8bc9e403d35",
+  "v2_hash": "fdd87438f59dc08a183fb81c4f32e4db9fbf18fe056f8e466dec2409fc144389",
+  "hash_changed": true,
+  "run1_verdict": "new",
+  "run2_verdict": "unchanged",
+  "run3_verdict": "changed",
+  "run2_stopped_after_fetch": true,
+  "run2_stages_executed": [
+    "fetch"
+  ],
+  "run2_bundle_unchanged": true,
+  "run3_stages_executed": [
+    "fetch",
+    "adapter",
+    "validator",
+    "merger",
+    "publisher"
+  ],
+  "run3_extraction_reran": true,
+  "run3_publish": {
+    "input": 1,
+    "published": 1,
+    "updated": 0,
+    "unchanged": 0,
+    "skipped": 0,
+    "renamed": 0,
+    "index_updated": true,
+    "documents": [
+      "/tmp/kb-evidence/change-sandbox/knowledge/amazon-ads-reporting-api-open-beta-report-requests-amazon-ads-b8a4bd.md"
+    ],
+    "last_run": "2026-09-27T17:24:33+00:00"
+  },
+  "run1_publish": {
+    "input": 1,
+    "published": 1,
+    "updated": 0,
+    "unchanged": 0,
+    "skipped": 0,
+    "renamed": 0,
+    "index_updated": true,
+    "documents": [
+      "/tmp/kb-evidence/change-sandbox/knowledge/amazon-ads-reporting-api-open-beta-report-requests-amazon-ads.md"
+    ],
+    "last_run": "2026-09-27T17:24:15+00:00"
+  },
+  "docs_after_run1": 1,
+  "docs_after_run3": 2,
+  "existing_doc_ids_stable": true,
+  "existing_filenames_stable": true,
+  "new_doc_ids": [
+    "kb-6abb34035fb8a4bd"
+  ],
+  "duplicate_ids": false,
+  "updated_in_place_no_duplicate": true
+}
+
+========================================================================
+BYTES-LEVEL PROOF — one existing document across RUN 1 -> RUN 3
+========================================================================
+document kb-942877d87534aa96 at amazon-ads-reporting-api-open-beta-report-requests-amazon-ads.md
+--- after RUN 1 ---
+---
+id: kb-942877d87534aa96
+title: The Amazon Ads reporting API is in open beta. Report requests to the Amazon Ads reporting API are asynchronous.
+sources:
+  - https://advertising.amazon.com/API/docs/en-us/verification/change-fixture
+confidence: high
+status: official
+last_checked: 2026-09-27
+---
+
+# The Amazon Ads reporting API is in open beta. Report requests to the Amazon Ads reporting API are asynchronous.
+
+## Details
+
+The Amazon Ads reporting API is in open beta. Report requests to the Amazon Ads reporting API are asynchronous.
+
+- confidence_score: 0.60
+- resolution: complementary_merge
+- status: valid
+
+## Sources
+- https://advertising.amazon.com/API/docs/en-us/verification/change-fixture — official, fetched 2026-09-27T17:24:15+00:00
+
+--- after RUN 3 (same file, same id, updated) ---
+---
+id: kb-942877d87534aa96
+title: The Amazon Ads reporting API is in open beta. Report requests to the Amazon Ads reporting API are asynchronous.
+sources:
+  - https://advertising.amazon.com/API/docs/en-us/verification/change-fixture
+confidence: high
+status: official
+last_checked: 2026-09-27
+---
+
+# The Amazon Ads reporting API is in open beta. Report requests to the Amazon Ads reporting API are asynchronous.
+
+## Details
+
+The Amazon Ads reporting API is in open beta. Report requests to the Amazon Ads reporting API are asynchronous.
+
+- confidence_score: 0.60
+- resolution: complementary_merge
+- status: valid
+
+## Sources
+- https://advertising.amazon.com/API/docs/en-us/verification/change-fixture — official, fetched 2026-09-27T17:24:15+00:00
+
+
+
+# EXPERIMENT 4b — same protocol, DISTINCT-topic claims
+# (driver: change_experiment_b.py, source and output below)
+
+```python
+"""PHASE 4b evidence driver — change detection with DISTINCT-topic claims.
+
+Companion to change_experiment.py (4a). In 4a all fixture sentences shared one
+topic_hint, so the changed run produced a new content-addressed version doc.
+Here the sentences have distinct subjects, so their topic_hints (and thus
+facts and documents) stay stable across content versions — demonstrating the
+Publisher's update-in-place path: on a changed source the existing documents
+are UPDATED (same id, same filename, refreshed bytes) and only the genuinely
+new fact becomes a new document.
+
+  RUN 1  v1 (2 distinct-subject sentences) -> NEW -> 2 documents published
+  RUN 2  v1 again                          -> UNCHANGED -> STOP
+  RUN 3  v2 (adds a 3rd distinct sentence) -> CHANGED -> 2 docs UPDATED in
+         place + 1 new doc published; no duplicates
+"""
+import difflib
+import hashlib
+import json
+import logging
+import shutil
+import sys
+import time
+from pathlib import Path
+
+REPO = Path("/Users/priyanshurajput/amazon-ads-kb")
+sys.path.insert(0, str(REPO))
+
+from pipeline.fetch import FetchResult  # noqa: E402
+from pipeline.orchestrate import orchestrate  # noqa: E402
+
+logging.basicConfig(level=logging.INFO, stream=sys.stdout,
+                    format="%(levelname)s %(name)s: %(message)s")
+
+ROOT = Path("/tmp/kb-evidence")
+URL = "https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b"
+
+MD_V1 = ("# Amazon Ads facts\n\n"
+         "The Amazon Ads reporting API is in open beta.\n"
+         "Sponsored Products campaigns are billed on a cost-per-click basis.\n")
+MD_V2 = MD_V1 + "Amazon Marketing Stream delivers campaign metrics hourly.\n"
+
+
+def sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class ContentServer:
+    def __init__(self):
+        self.content = MD_V1
+
+    def fetcher(self):
+        def _fetch(urls, fetched_at):
+            return [FetchResult(
+                url=u, strategy="verification-fixture", content_type="markdown",
+                title=None, content=self.content, sha256=sha(self.content),
+                fetched_at=fetched_at).to_json() | {"ok": True}
+                for u in urls]
+        return _fetch
+
+
+def fresh(name):
+    base = ROOT / name
+    if base.exists():
+        shutil.rmtree(base)
+    return {"state": base / "fetch_state.json", "cache": base / "cache",
+            "claims": base / "claims", "knowledge": base / "knowledge"}
+
+
+def section(title):
+    print("\n" + "=" * 72 + "\n" + title + "\n" + "=" * 72, flush=True)
+
+
+def docs_snapshot(kdir):
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(Path(kdir).glob("*.md"))
+            if p.name not in ("INDEX.md", "CHANGELOG.md")}
+
+
+def doc_texts(kdir):
+    return {p.name: p.read_text(encoding="utf-8")
+            for p in sorted(Path(kdir).glob("*.md"))
+            if p.name not in ("INDEX.md", "CHANGELOG.md")}
+
+
+paths = fresh("change-sandbox-b")
+server = ContentServer()
+
+section("RUN 1 — v1: two distinct-subject sentences (expect NEW, 2 docs)")
+r1 = orchestrate([URL], state_path=paths["state"], cache_path=paths["cache"],
+                 claims_path=paths["claims"], knowledge_dir=paths["knowledge"],
+                 fetcher=server.fetcher())
+print(json.dumps({"verdict": r1["urls"][0]["fetch"]["verdict"],
+                  "claims": r1["urls"][0].get("extract", {}).get("claim_count"),
+                  "merge": r1.get("merge"), "publish": r1.get("publish"),
+                  "docs": sorted(docs_snapshot(paths["knowledge"]))}, indent=2))
+texts1 = doc_texts(paths["knowledge"])
+
+section("RUN 2 — v1 again (expect UNCHANGED -> STOP after fetch)")
+t0 = time.time()
+r2 = orchestrate([URL], state_path=paths["state"], cache_path=paths["cache"],
+                 claims_path=paths["claims"], knowledge_dir=paths["knowledge"],
+                 fetcher=server.fetcher())
+print(json.dumps({"verdict": r2["urls"][0]["fetch"]["verdict"],
+                  "stopped_at": r2["urls"][0].get("stopped_at"),
+                  "stages_executed": r2["stages_executed"],
+                  "bundle_modified": r2.get("knowledge_bundle_modified"),
+                  "duration_s": round(time.time() - t0, 1),
+                  "docs_unchanged": docs_snapshot(paths["knowledge"])
+                                    == docs_snapshot(paths["knowledge"])}, indent=2))
+snap_after_run2 = docs_snapshot(paths["knowledge"])
+
+section("RUN 3 — v2: adds a third distinct-subject sentence "
+        "(expect CHANGED -> update in place + one new doc)")
+server.content = MD_V2
+r3 = orchestrate([URL], state_path=paths["state"], cache_path=paths["cache"],
+                 claims_path=paths["claims"], knowledge_dir=paths["knowledge"],
+                 fetcher=server.fetcher())
+texts3 = doc_texts(paths["knowledge"])
+snap3 = docs_snapshot(paths["knowledge"])
+print(json.dumps({"verdict": r3["urls"][0]["fetch"]["verdict"],
+                  "claims": r3["urls"][0].get("extract", {}).get("claim_count"),
+                  "stages_executed": r3["stages_executed"],
+                  "merge": r3.get("merge"), "publish": r3.get("publish"),
+                  "docs_after": sorted(snap3)}, indent=2))
+
+section("UPDATE-IN-PLACE PROOF — per-file diff RUN 1 -> RUN 3")
+state = json.loads(Path(paths["state"]).read_text())
+import re
+ids = {}
+for name in sorted(snap3):
+    m = re.search(r"^id:\s*(\S+)", texts3[name], re.M)
+    ids[name] = m.group(1) if m else None
+unchanged_files, updated_files, new_files = [], [], []
+for name in sorted(snap3):
+    if name not in texts1:
+        new_files.append(name)
+    elif texts1[name] == texts3[name]:
+        unchanged_files.append(name)
+    else:
+        updated_files.append(name)
+print(json.dumps({
+    "v1_sha256": sha(MD_V1), "v2_sha256": sha(MD_V2),
+    "hash_changed": True,
+    "updated_in_place": updated_files,
+    "byte_identical_untouched": unchanged_files,
+    "new_documents": new_files,
+    "doc_ids": ids,
+    "duplicate_ids": len(ids) != len(set(ids.values())),
+}, indent=2))
+for name in updated_files:
+    print(f"\n----- unified diff of {name} (RUN 1 -> RUN 3) -----")
+    print("".join(difflib.unified_diff(
+        texts1[name].splitlines(keepends=True),
+        texts3[name].splitlines(keepends=True),
+        fromfile=f"RUN1/{name}", tofile=f"RUN3/{name}")))
+for name in new_files:
+    print(f"\n----- NEW document {name} (id {ids[name]}) -----")
+    print(texts3[name])
+```
+
+$ python3 /tmp/kb-evidence/change_experiment_b.py
+
+
+========================================================================
+RUN 1 — v1: two distinct-subject sentences (expect NEW, 2 docs)
+========================================================================
+INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b: 2 facts (source_type=official, is_changed=Y)
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b group=topic:reporting-api score=0.60 status=valid rule=score-band
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b group=topic:sponsored-products-billing score=0.60 status=valid rule=score-band
+INFO pipeline.merger: merge group of 1 -> resolution=single_source status=valid sources=1
+INFO pipeline.merger: merge group of 1 -> resolution=single_source status=valid sources=1
+INFO pipeline.publisher: published kb-716187a0a45e1d6b at amazon-ads-reporting-api-open-beta.md (single_source)
+INFO pipeline.publisher: published kb-35495514217fb208 at sponsored-products-campaigns-billed-cost-per-click-basis.md (single_source)
+INFO pipeline.publisher: report: 2 input -> 2 published, 0 updated, 0 unchanged, 0 skipped, 0 renamed
+{
+  "verdict": "new",
+  "claims": 2,
+  "merge": {
+    "input": 2,
+    "output": 2
+  },
+  "publish": {
+    "input": 2,
+    "published": 2,
+    "updated": 0,
+    "unchanged": 0,
+    "skipped": 0,
+    "renamed": 0,
+    "index_updated": true,
+    "documents": [
+      "/tmp/kb-evidence/change-sandbox-b/knowledge/amazon-ads-reporting-api-open-beta.md",
+      "/tmp/kb-evidence/change-sandbox-b/knowledge/sponsored-products-campaigns-billed-cost-per-click-basis.md"
+    ],
+    "last_run": "2026-09-27T17:31:20+00:00"
+  },
+  "docs": [
+    "amazon-ads-reporting-api-open-beta.md",
+    "sponsored-products-campaigns-billed-cost-per-click-basis.md"
+  ]
+}
+
+========================================================================
+RUN 2 — v1 again (expect UNCHANGED -> STOP after fetch)
+========================================================================
+INFO pipeline.orchestrate: https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b: unchanged — stopping after fetch
+INFO pipeline.orchestrate: no facts produced; validator/merger/publisher not run
+{
+  "verdict": "unchanged",
+  "stopped_at": "fetch",
+  "stages_executed": [
+    "fetch"
+  ],
+  "bundle_modified": false,
+  "duration_s": 0.0,
+  "docs_unchanged": true
+}
+
+========================================================================
+RUN 3 — v2: adds a third distinct-subject sentence (expect CHANGED -> update in place + one new doc)
+========================================================================
+INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b: 3 facts (source_type=official, is_changed=Y)
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b group=topic:reporting-api score=0.60 status=valid rule=score-band
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b group=topic:sponsored-products-billing score=0.60 status=valid rule=score-band
+INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b group=topic:amazon-marketing-stream score=0.60 status=valid rule=score-band
+INFO pipeline.merger: merge group of 1 -> resolution=single_source status=valid sources=1
+INFO pipeline.merger: merge group of 1 -> resolution=single_source status=valid sources=1
+INFO pipeline.merger: merge group of 1 -> resolution=single_source status=valid sources=1
+INFO pipeline.publisher: updated kb-716187a0a45e1d6b at amazon-ads-reporting-api-open-beta.md
+INFO pipeline.publisher: updated kb-35495514217fb208 at sponsored-products-campaigns-billed-cost-per-click-basis.md
+INFO pipeline.publisher: published kb-fbc1c11683ec3c65 at amazon-marketing-stream-delivers-campaign-metrics-hourly.md (single_source)
+INFO pipeline.publisher: report: 3 input -> 1 published, 2 updated, 0 unchanged, 0 skipped, 0 renamed
+{
+  "verdict": "changed",
+  "claims": 3,
+  "stages_executed": [
+    "fetch",
+    "adapter",
+    "validator",
+    "merger",
+    "publisher"
+  ],
+  "merge": {
+    "input": 3,
+    "output": 3
+  },
+  "publish": {
+    "input": 3,
+    "published": 1,
+    "updated": 2,
+    "unchanged": 0,
+    "skipped": 0,
+    "renamed": 0,
+    "index_updated": true,
+    "documents": [
+      "/tmp/kb-evidence/change-sandbox-b/knowledge/amazon-ads-reporting-api-open-beta.md",
+      "/tmp/kb-evidence/change-sandbox-b/knowledge/amazon-marketing-stream-delivers-campaign-metrics-hourly.md",
+      "/tmp/kb-evidence/change-sandbox-b/knowledge/sponsored-products-campaigns-billed-cost-per-click-basis.md"
+    ],
+    "last_run": "2026-09-27T17:31:42+00:00"
+  },
+  "docs_after": [
+    "amazon-ads-reporting-api-open-beta.md",
+    "amazon-marketing-stream-delivers-campaign-metrics-hourly.md",
+    "sponsored-products-campaigns-billed-cost-per-click-basis.md"
+  ]
+}
+
+========================================================================
+UPDATE-IN-PLACE PROOF — per-file diff RUN 1 -> RUN 3
+========================================================================
+{
+  "v1_sha256": "1eb9e0a7fde848d32e07496909e59d687ee780e22a73f68c7e1e5c737de1180c",
+  "v2_sha256": "2d73d4cc7ac671544256293a5f6f21a03d7ececd1b1b863601fb61e616e0cb3f",
+  "hash_changed": true,
+  "updated_in_place": [
+    "amazon-ads-reporting-api-open-beta.md",
+    "sponsored-products-campaigns-billed-cost-per-click-basis.md"
+  ],
+  "byte_identical_untouched": [],
+  "new_documents": [
+    "amazon-marketing-stream-delivers-campaign-metrics-hourly.md"
+  ],
+  "doc_ids": {
+    "amazon-ads-reporting-api-open-beta.md": "kb-716187a0a45e1d6b",
+    "amazon-marketing-stream-delivers-campaign-metrics-hourly.md": "kb-fbc1c11683ec3c65",
+    "sponsored-products-campaigns-billed-cost-per-click-basis.md": "kb-35495514217fb208"
+  },
+  "duplicate_ids": false
+}
+
+----- unified diff of amazon-ads-reporting-api-open-beta.md (RUN 1 -> RUN 3) -----
+--- RUN1/amazon-ads-reporting-api-open-beta.md
++++ RUN3/amazon-ads-reporting-api-open-beta.md
+@@ -19,4 +19,4 @@
+ - status: valid
+ 
+ ## Sources
+-- https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b — official, fetched 2026-09-27T17:31:20+00:00
++- https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b — official, fetched 2026-09-27T17:31:42+00:00
+
+
+----- unified diff of sponsored-products-campaigns-billed-cost-per-click-basis.md (RUN 1 -> RUN 3) -----
+--- RUN1/sponsored-products-campaigns-billed-cost-per-click-basis.md
++++ RUN3/sponsored-products-campaigns-billed-cost-per-click-basis.md
+@@ -19,4 +19,4 @@
+ - status: valid
+ 
+ ## Sources
+-- https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b — official, fetched 2026-09-27T17:31:20+00:00
++- https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b — official, fetched 2026-09-27T17:31:42+00:00
+
+
+----- NEW document amazon-marketing-stream-delivers-campaign-metrics-hourly.md (id kb-fbc1c11683ec3c65) -----
+---
+id: kb-fbc1c11683ec3c65
+title: Amazon Marketing Stream delivers campaign metrics hourly.
+sources:
+  - https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b
+confidence: high
+status: official
+last_checked: 2026-09-27
+---
+
+# Amazon Marketing Stream delivers campaign metrics hourly.
+
+## Details
+
+Amazon Marketing Stream delivers campaign metrics hourly.
+
+- confidence_score: 0.60
+- resolution: single_source
+- status: valid
+
+## Sources
+- https://advertising.amazon.com/API/docs/en-us/verification/change-fixture-b — official, fetched 2026-09-27T17:31:42+00:00
+

@@ -1,0 +1,188 @@
+# PHASE 5 — KNOWLEDGE BUNDLE FILE INTEGRITY EVIDENCE
+# Date: 2026-09-27 17:35:43 UTC
+# (first run of this driver crashed on a bug in the driver itself —
+#  a dead dict comprehension unpacking 3-tuples as 2; fixed and rerun.)
+# Driver script source follows, then its full output.
+
+```python
+"""PHASE 5 evidence driver — knowledge bundle integrity check (read-only).
+
+Validates the REAL knowledge/ directory with the project's own OKF parser
+(pipeline.okf.parse): frontmatter schema, stable IDs, source URLs,
+confidence/status fields, duplicate IDs/titles, INDEX.md consistency
+(both directions), CHANGELOG.md coverage of every document, and INDEX
+last-checked agreement with each document's frontmatter.
+"""
+import json
+import re
+import sys
+from collections import Counter
+from pathlib import Path
+
+REPO = Path("/Users/priyanshurajput/amazon-ads-kb")
+sys.path.insert(0, str(REPO))
+
+from pipeline import okf  # noqa: E402  (the project's own validator)
+
+KB = REPO / "knowledge"
+SPECIAL = {"INDEX.md", "CHANGELOG.md"}
+
+problems: list[str] = []
+docs: dict[str, dict] = {}  # file -> meta
+
+print(f"Knowledge bundle: {KB}")
+print(f"Total .md files: {len(list(KB.glob('*.md')))} "
+      f"(documents + INDEX.md + CHANGELOG.md)\n")
+
+# ---- 1. Parse every document with the project's own OKF validator --------
+for p in sorted(KB.glob("*.md")):
+    if p.name in SPECIAL:
+        continue
+    try:
+        meta, body = okf.parse(p.read_text(encoding="utf-8"), path=p)
+        docs[p.name] = meta
+    except okf.OkfError as exc:
+        problems.append(f"INVALID DOCUMENT: {exc}")
+
+print(f"[1] OKF frontmatter validation (pipeline.okf.parse): "
+      f"{len(docs)} valid, {len([p for p in problems if 'INVALID' in p])} invalid")
+
+# ---- 2. Field presence (okf.parse enforces; double-report explicitly) ----
+missing_ids = [f for f, m in docs.items() if not m.get("id")]
+missing_sources = [f for f, m in docs.items()
+                   if not isinstance(m.get("sources"), list) or not m["sources"]]
+bad_conf = [f for f, m in docs.items()
+            if m.get("confidence") not in okf.CONFIDENCE_LEVELS]
+bad_status = [f for f, m in docs.items()
+              if m.get("status") not in okf.STATUSES]
+print(f"[2] Field presence: missing id={len(missing_ids)}, "
+      f"missing sources={len(missing_sources)}, "
+      f"bad confidence={len(bad_conf)}, bad status={len(bad_status)}")
+
+# ---- 3. Duplicate ids / titles -------------------------------------------
+id_counts = Counter(m["id"] for m in docs.values())
+title_counts = Counter(m["title"] for m in docs.values())
+dup_ids = {i: c for i, c in id_counts.items() if c > 1}
+dup_titles = {t: c for t, c in title_counts.items() if c > 1}
+print(f"[3] Duplicate IDs: {len(dup_ids)} {dup_ids or ''}")
+print(f"    Duplicate titles: {len(dup_titles)} {dup_titles or ''}")
+if dup_ids:
+    problems.append(f"duplicate ids: {dup_ids}")
+if dup_titles:
+    problems.append(f"duplicate titles: {dup_titles}")
+
+# ---- 4. INDEX.md consistency ---------------------------------------------
+index_rows = re.findall(r"\|\s*\[([^\]]+)\]\(\./([^)]+\.md)\)",
+                        (KB / "INDEX.md").read_text(encoding="utf-8"))
+index_files = {fname for _, fname in index_rows}
+doc_files = set(docs)
+in_index_not_on_disk = sorted(index_files - doc_files - {"INDEX.md"})
+on_disk_not_in_index = sorted(doc_files - index_files)
+print(f"[4] INDEX.md rows: {len(index_rows)}; documents on disk: {len(doc_files)}")
+print(f"    INDEX -> missing file on disk: {in_index_not_on_disk or 'none'}")
+print(f"    On disk -> missing from INDEX: {on_disk_not_in_index or 'none'}")
+if in_index_not_on_disk:
+    problems.append(f"INDEX links to nonexistent files: {in_index_not_on_disk}")
+if on_disk_not_in_index:
+    problems.append(f"documents missing from INDEX: {on_disk_not_in_index}")
+
+# INDEX last-checked agreement with frontmatter (parse columns per row)
+mismatch = []
+for line in (KB / "INDEX.md").read_text(encoding="utf-8").splitlines():
+    m = re.match(r"\|\s*\[([^\]]+)\]\(\./([^)]+\.md)\)\s*\|.*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*$", line)
+    if m:
+        fname, checked = m.group(2), m.group(3)
+        if fname in docs and docs[fname]["last_checked"] != checked:
+            mismatch.append((fname, checked, docs[fname]["last_checked"]))
+print(f"    INDEX 'Last checked' vs frontmatter mismatches: "
+      f"{mismatch or 'none'}")
+if mismatch:
+    problems.append(f"INDEX last_checked mismatches: {mismatch}")
+
+# ---- 5. CHANGELOG.md consistency -----------------------------------------
+cl = (KB / "CHANGELOG.md").read_text(encoding="utf-8")
+cl_ids = set(re.findall(r"\*\*([a-z0-9-]+)\*\*", cl))
+doc_ids = {m["id"] for m in docs.values()}
+never_mentioned = sorted(doc_ids - cl_ids)
+print(f"[5] CHANGELOG entries mention {len(cl_ids & doc_ids)} of "
+      f"{len(doc_ids)} current document IDs")
+print(f"    Document IDs never mentioned in CHANGELOG: "
+      f"{never_mentioned or 'none'}")
+if never_mentioned:
+    problems.append(f"docs absent from CHANGELOG: {never_mentioned}")
+cl_dates = re.findall(r"^## (\d{4}-\d{2}-\d{2})", cl, re.M)
+print(f"    CHANGELOG dated sections: {len(cl_dates)} "
+      f"(latest: {max(cl_dates) if cl_dates else 'n/a'})")
+stale_mentions = sorted(cl_ids - doc_ids)
+print(f"    CHANGELOG mentions IDs not currently on disk: "
+      f"{len(stale_mentions)} (historical renames/updates are expected "
+      f"to keep their ID; ID changes create new files)")
+
+# ---- 6. Sources are http(s) URLs (okf.parse enforces) --------------------
+all_sources = [s for m in docs.values() for s in m["sources"]]
+bad_urls = [s for s in all_sources
+            if not s.startswith(("http://", "https://"))]
+print(f"[6] Total source URLs across documents: {len(all_sources)} "
+      f"(unique: {len(set(all_sources))}); invalid: {len(bad_urls)}")
+
+# ---- 7. Special files -----------------------------------------------------
+print(f"[7] INDEX.md exists: {(KB / 'INDEX.md').exists()}, "
+      f"CHANGELOG.md exists: {(KB / 'CHANGELOG.md').exists()}, "
+      f"non-markdown strays: "
+      f"{[p.name for p in KB.iterdir() if p.suffix != '.md'] or 'none'}")
+
+print("\n" + "=" * 72)
+if problems:
+    print(f"PROBLEMS FOUND: {len(problems)}")
+    for p in problems:
+        print(f"  - {p}")
+else:
+    print("NO PROBLEMS FOUND — bundle is internally consistent.")
+print("=" * 72)
+print(json.dumps({
+    "documents": len(docs),
+    "valid_frontmatter": len(docs),
+    "invalid_frontmatter": len([p for p in problems if 'INVALID' in p]),
+    "duplicate_ids": len(dup_ids),
+    "duplicate_titles": len(dup_titles),
+    "index_rows": len(index_rows),
+    "index_consistent": not (in_index_not_on_disk or on_disk_not_in_index),
+    "changelog_covers_all_docs": not never_mentioned,
+    "unique_source_urls": len(set(all_sources)),
+}, indent=2))
+```
+
+$ python3 /tmp/kb-evidence/integrity_check.py
+
+Knowledge bundle: /Users/priyanshurajput/amazon-ads-kb/knowledge
+Total .md files: 52 (documents + INDEX.md + CHANGELOG.md)
+
+[1] OKF frontmatter validation (pipeline.okf.parse): 50 valid, 0 invalid
+[2] Field presence: missing id=0, missing sources=0, bad confidence=0, bad status=0
+[3] Duplicate IDs: 0 
+    Duplicate titles: 0 
+[4] INDEX.md rows: 50; documents on disk: 50
+    INDEX -> missing file on disk: none
+    On disk -> missing from INDEX: none
+    INDEX 'Last checked' vs frontmatter mismatches: none
+[5] CHANGELOG entries mention 50 of 50 current document IDs
+    Document IDs never mentioned in CHANGELOG: none
+    CHANGELOG dated sections: 2 (latest: 2026-09-27)
+    CHANGELOG mentions IDs not currently on disk: 0 (historical renames/updates are expected to keep their ID; ID changes create new files)
+[6] Total source URLs across documents: 51 (unique: 4); invalid: 0
+[7] INDEX.md exists: True, CHANGELOG.md exists: True, non-markdown strays: none
+
+========================================================================
+NO PROBLEMS FOUND — bundle is internally consistent.
+========================================================================
+{
+  "documents": 50,
+  "valid_frontmatter": 50,
+  "invalid_frontmatter": 0,
+  "duplicate_ids": 0,
+  "duplicate_titles": 0,
+  "index_rows": 50,
+  "index_consistent": true,
+  "changelog_covers_all_docs": true,
+  "unique_source_urls": 4
+}

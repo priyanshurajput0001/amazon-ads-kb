@@ -1,0 +1,222 @@
+Python 3.14.7
+$ python3 -m unittest discover -s tests -v
+test_corrupt_claims_file (test_adapter.AdaptUrlTests.test_corrupt_claims_file) ... ok
+test_missing_claims_file (test_adapter.AdaptUrlTests.test_missing_claims_file) ... ok
+test_never_successfully_fetched (test_adapter.AdaptUrlTests.test_never_successfully_fetched) ... ok
+test_ok_path_returns_facts (test_adapter.AdaptUrlTests.test_ok_path_returns_facts) ... ok
+test_url_not_in_state (test_adapter.AdaptUrlTests.test_url_not_in_state) ... ok
+test_changed_content_is_not_stable (test_adapter.BuildFactsTests.test_changed_content_is_not_stable) ... ok
+test_confirmed_unchanged_across_runs (test_adapter.BuildFactsTests.test_confirmed_unchanged_across_runs) ... ok
+test_deterministic (test_adapter.BuildFactsTests.test_deterministic) ... ok
+test_extractor_provenance_preserved (test_adapter.BuildFactsTests.test_extractor_provenance_preserved) ... ok
+test_fact_shape_matches_validator_input (test_adapter.BuildFactsTests.test_fact_shape_matches_validator_input) ... ok
+test_first_sighting_is_changed (test_adapter.BuildFactsTests.test_first_sighting_is_changed) ... ok
+test_malformed_claims_skipped_and_reported (test_adapter.BuildFactsTests.test_malformed_claims_skipped_and_reported) ... ok
+test_no_claims_list_raises (test_adapter.BuildFactsTests.test_no_claims_list_raises) ... ok
+test_everything_else_is_community (test_adapter.ClassifyTests.test_everything_else_is_community) ... ok
+test_official_sources (test_adapter.ClassifyTests.test_official_sources) ... ok
+test_cli_all_failed_exit_2 (test_adapter.CliTests.test_cli_all_failed_exit_2) ... WARNING pipeline.adapter: adapt failed for https://never.example/: no content hash in fetch state (never successfully fetched)
+ok
+test_cli_prints_facts_array (test_adapter.CliTests.test_cli_prints_facts_array) ... INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us: 2 facts (source_type=official, is_changed=Y)
+INFO pipeline.adapter: adapter: 1/1 URLs ok, 2 facts total
+ok
+test_creates_cache_dir_automatically (test_cache.CacheContentTests.test_creates_cache_dir_automatically) ... ok
+test_creates_file_with_exact_content (test_cache.CacheContentTests.test_creates_file_with_exact_content) ... ok
+test_does_not_rewrite_existing_file (test_cache.CacheContentTests.test_does_not_rewrite_existing_file) ... ok
+test_html_content_gets_html_extension (test_cache.CacheContentTests.test_html_content_gets_html_extension) ... ok
+test_different_content_creates_different_cache_file (test_cache.FetchCacheIntegrationTests.test_different_content_creates_different_cache_file) ... ok
+test_failed_fetch_creates_no_cache (test_cache.FetchCacheIntegrationTests.test_failed_fetch_creates_no_cache) ... ok
+test_same_hash_does_not_rewrite_existing_cache (test_cache.FetchCacheIntegrationTests.test_same_hash_does_not_rewrite_existing_cache) ... ok
+test_successful_fetch_creates_cache (test_cache.FetchCacheIntegrationTests.test_successful_fetch_creates_cache) ... ok
+test_failed_url_is_reported_not_fatal (test_cli.CliTests.test_failed_url_is_reported_not_fatal) ... ok
+test_first_fetch_is_new (test_cli.CliTests.test_first_fetch_is_new) ... ok
+test_multiple_urls_keep_order (test_cli.CliTests.test_multiple_urls_keep_order) ... ok
+test_requires_at_least_one_url (test_cli.CliTests.test_requires_at_least_one_url) ... ok
+test_second_identical_fetch_is_unchanged (test_cli.CliTests.test_second_identical_fetch_is_unchanged) ... ok
+test_multiple_urls_one_failure_does_not_stop_others (test_extractor.CliTests.test_multiple_urls_one_failure_does_not_stop_others) ... ok
+test_01_url_not_in_state (test_extractor.ExtractionGuardTests.test_01_url_not_in_state) ... ok
+test_02_missing_cache_file (test_extractor.ExtractionGuardTests.test_02_missing_cache_file) ... ok
+test_03_html_cache_rejected (test_extractor.ExtractionGuardTests.test_03_html_cache_rejected) ... ok
+test_04_sha_mismatch_rejected (test_extractor.ExtractionGuardTests.test_04_sha_mismatch_rejected) ... ok
+test_05_existing_claims_skipped_and_llm_not_called (test_extractor.ExtractionGuardTests.test_05_existing_claims_skipped_and_llm_not_called) ... ok
+test_07_invalid_json_from_llm_rejected (test_extractor.ExtractionGuardTests.test_07_invalid_json_from_llm_rejected) ... ok
+test_08_missing_required_claim_field_rejected (test_extractor.ExtractionGuardTests.test_08_missing_required_claim_field_rejected) ... ok
+test_08b_empty_quote_rejected (test_extractor.ExtractionGuardTests.test_08b_empty_quote_rejected) ... ok
+test_08c_bad_confidence_rejected (test_extractor.ExtractionGuardTests.test_08c_bad_confidence_rejected) ... ok
+test_09_quote_not_in_source_rejected (test_extractor.ExtractionGuardTests.test_09_quote_not_in_source_rejected) ... ok
+test_10_valid_claims_written_correctly (test_extractor.ExtractionGuardTests.test_10_valid_claims_written_correctly) ... ok
+test_bare_json_array (test_extractor.LlmParseTests.test_bare_json_array) ... ok
+test_claims_object_unwrapped (test_extractor.LlmParseTests.test_claims_object_unwrapped) ... ok
+test_fenced_json_array (test_extractor.LlmParseTests.test_fenced_json_array) ... ok
+test_garbage_raises_llm_error (test_extractor.LlmParseTests.test_garbage_raises_llm_error) ... ok
+test_non_list_raises_llm_error (test_extractor.LlmParseTests.test_non_list_raises_llm_error) ... ok
+test_changed_on_modified_content (test_fetch_state.FetchManyWithStateTests.test_changed_on_modified_content) ... ok
+test_error_then_success_is_new_again (test_fetch_state.FetchManyWithStateTests.test_error_then_success_is_new_again) ... ok
+test_fetcher_receives_urls_and_timestamp_unchanged (test_fetch_state.FetchManyWithStateTests.test_fetcher_receives_urls_and_timestamp_unchanged) ... ok
+test_first_run_marks_every_url_new (test_fetch_state.FetchManyWithStateTests.test_first_run_marks_every_url_new) ... ok
+test_legacy_fetch_api_untouched (test_fetch_state.FetchManyWithStateTests.test_legacy_fetch_api_untouched) ... ok
+test_unchanged_on_identical_refetch (test_fetch_state.FetchManyWithStateTests.test_unchanged_on_identical_refetch) ... ok
+test_cli_invalid_json_exit_2 (test_merger.CliTests.test_cli_invalid_json_exit_2) ... ok
+test_cli_reads_file (test_merger.CliTests.test_cli_reads_file) ... INFO pipeline.merger: merge group of 2 -> resolution=duplicate_merged status=valid sources=2
+ok
+test_cli_reads_stdin (test_merger.CliTests.test_cli_reads_stdin) ... INFO pipeline.merger: merge group of 2 -> resolution=duplicate_merged status=valid sources=2
+ok
+test_complementary_merge_blocked_by_conflicting_pair (test_merger.ComplementaryTests.test_complementary_merge_blocked_by_conflicting_pair) ... ok
+test_complementary_merge_preserves_both_details (test_merger.ComplementaryTests.test_complementary_merge_preserves_both_details) ... ok
+test_no_fabricated_information_in_complementary_merge (test_merger.ComplementaryTests.test_no_fabricated_information_in_complementary_merge) ... ok
+test_strongest_confidence_and_status_preserved (test_merger.ConfidenceStatusTests.test_strongest_confidence_and_status_preserved) ... ok
+test_authority_beats_recency (test_merger.ConflictTests.test_authority_beats_recency) ... ok
+test_community_majority_does_not_override_official (test_merger.ConflictTests.test_community_majority_does_not_override_official) ... ok
+test_completely_tied_conflict_keeps_both (test_merger.ConflictTests.test_completely_tied_conflict_keeps_both) ... ok
+test_llm_not_called_during_conflict_resolution (test_merger.ConflictTests.test_llm_not_called_during_conflict_resolution) ... ok
+test_majority_wins_when_authority_and_date_tied (test_merger.ConflictTests.test_majority_wins_when_authority_and_date_tied) ... ok
+test_recency_wins_when_authority_tied (test_merger.ConflictTests.test_recency_wins_when_authority_tied) ... ok
+test_missing_status_rejected (test_merger.ContractTests.test_missing_status_rejected) ... ok
+test_not_a_list_rejected (test_merger.ContractTests.test_not_a_list_rejected) ... ok
+test_participating_fact_needs_confidence_score (test_merger.ContractTests.test_participating_fact_needs_confidence_score) ... ok
+test_unknown_status_rejected (test_merger.ContractTests.test_unknown_status_rejected) ... ok
+test_output_order_follows_input_order (test_merger.DeterminismTests.test_output_order_follows_input_order) ... ok
+test_same_input_same_output (test_merger.DeterminismTests.test_same_input_same_output) ... ok
+test_all_contributing_sources_preserved (test_merger.DuplicateTests.test_all_contributing_sources_preserved) ... ok
+test_duplicates_merge_into_one_fact (test_merger.DuplicateTests.test_duplicates_merge_into_one_fact) ... ok
+test_invalid_label_handled_safely (test_merger.FailSafeTests.test_invalid_label_handled_safely) ... ok
+test_invalid_llm_json_reported_and_pair_kept_separate (test_merger.FailSafeTests.test_invalid_llm_json_reported_and_pair_kept_separate) ... ok
+test_fenced_json (test_merger.LlmParseTests.test_fenced_json) ... ok
+test_invalid_json_raises (test_merger.LlmParseTests.test_invalid_json_raises) ... ok
+test_invalid_label_raises (test_merger.LlmParseTests.test_invalid_label_raises) ... ok
+test_plain_json (test_merger.LlmParseTests.test_plain_json) ... ok
+test_rejected_facts_pass_through_unchanged (test_merger.PassThroughTests.test_rejected_facts_pass_through_unchanged) ... ok
+test_facts_without_topic_id_are_separate_singletons (test_merger.SingleSourceTests.test_facts_without_topic_id_are_separate_singletons) ... ok
+test_single_fact_is_single_source_without_llm (test_merger.SingleSourceTests.test_single_fact_is_single_source_without_llm) ... ok
+test_main_prints_report_and_exits_zero (test_orchestrate.CliTests.test_main_prints_report_and_exits_zero) ... ok
+test_main_requires_urls (test_orchestrate.CliTests.test_main_requires_urls) ... usage: orchestrate [-h] URL [URL ...]
+orchestrate: error: the following arguments are required: URL
+ok
+test_changed_url_reruns_extract_onward (test_orchestrate.SequencingTests.test_changed_url_reruns_extract_onward) ... ok
+test_existing_bundle_intact_on_failure (test_orchestrate.SequencingTests.test_existing_bundle_intact_on_failure) ... https://advertising.amazon.com/API/docs/en-us/other-page: extract failed — stopping this URL (LLM extraction failed: boom)
+ok
+test_extract_failure_publishes_nothing (test_orchestrate.SequencingTests.test_extract_failure_publishes_nothing) ... https://advertising.amazon.com/API/docs/en-us/test-page: extract failed — stopping this URL (LLM extraction failed: LLM returned invalid JSON)
+ok
+test_fetch_failure_stops_url_before_any_llm (test_orchestrate.SequencingTests.test_fetch_failure_stops_url_before_any_llm) ... https://advertising.amazon.com/API/docs/en-us/test-page: fetch failed — stopping this URL (all fetch strategies failed)
+ok
+test_html_cache_reported_honestly (test_orchestrate.SequencingTests.test_html_cache_reported_honestly) ... https://advertising.amazon.com/API/docs/en-us/test-page: unusable cache format — stopping this URL
+ok
+test_knowledge_dir_defaults_to_real_bundle (test_orchestrate.SequencingTests.test_knowledge_dir_defaults_to_real_bundle) ... ok
+test_multiple_urls_handled_independently (test_orchestrate.SequencingTests.test_multiple_urls_handled_independently) ... https://advertising.amazon.com/API/docs/en-us/other-page: unusable cache format — stopping this URL
+https://blog.example/gone: fetch failed — stopping this URL (all fetch strategies failed)
+ok
+test_new_url_runs_all_stages (test_orchestrate.SequencingTests.test_new_url_runs_all_stages) ... ok
+test_unchanged_url_stops_after_fetch (test_orchestrate.SequencingTests.test_unchanged_url_stops_after_fetch) ... ok
+test_failed_write_leaves_no_partial_documents (test_publisher.AtomicityTests.test_failed_write_leaves_no_partial_documents) ... ok
+test_cli_facts_object_unwrapped (test_publisher.CliTests.test_cli_facts_object_unwrapped) ... INFO pipeline.publisher: published kb-9b266759b1a5212f at amazon-ads-mcp-server-open-beta.md (single_source)
+INFO pipeline.publisher: report: 1 input -> 1 published, 0 updated, 0 unchanged, 0 skipped, 0 renamed
+ok
+test_cli_invalid_input_exit_2 (test_publisher.CliTests.test_cli_invalid_input_exit_2) ... ok
+test_cli_with_file (test_publisher.CliTests.test_cli_with_file) ... INFO pipeline.publisher: published kb-9b266759b1a5212f at amazon-ads-mcp-server-open-beta.md (single_source)
+INFO pipeline.publisher: report: 1 input -> 1 published, 0 updated, 0 unchanged, 0 skipped, 0 renamed
+ok
+test_cli_with_stdin (test_publisher.CliTests.test_cli_with_stdin) ... INFO pipeline.publisher: published kb-9b266759b1a5212f at amazon-ads-mcp-server-open-beta.md (single_source)
+INFO pipeline.publisher: report: 1 input -> 1 published, 0 updated, 0 unchanged, 0 skipped, 0 renamed
+ok
+test_different_last_run_values_in_report (test_publisher.IdempotencyTests.test_different_last_run_values_in_report) ... ok
+test_documents_identical_despite_different_last_run (test_publisher.IdempotencyTests.test_documents_identical_despite_different_last_run) ... ok
+test_index_and_changelog_stable_on_identical_rerun (test_publisher.IdempotencyTests.test_index_and_changelog_stable_on_identical_rerun) ... ok
+test_second_identical_run_reports_unchanged (test_publisher.IdempotencyTests.test_second_identical_run_reports_unchanged) ... ok
+test_unrelated_documents_untouched (test_publisher.IdempotencyTests.test_unrelated_documents_untouched) ... ok
+test_colliding_slugs_never_overwrite (test_publisher.IdentityAndCollisionTests.test_colliding_slugs_never_overwrite) ... ok
+test_collision_suffix_derived_from_stable_id (test_publisher.IdentityAndCollisionTests.test_collision_suffix_derived_from_stable_id) ... ok
+test_duplicate_facts_in_one_batch_single_document (test_publisher.IdentityAndCollisionTests.test_duplicate_facts_in_one_batch_single_document) ... ok
+test_existing_document_updated_in_place_same_filename (test_publisher.IdentityAndCollisionTests.test_existing_document_updated_in_place_same_filename) ... ok
+test_identity_is_content_hash_not_filename (test_publisher.IdentityAndCollisionTests.test_identity_is_content_hash_not_filename) ... ok
+test_index_follows_migration (test_publisher.IndexTests.test_index_follows_migration) ... ok
+test_index_links_readable_filenames (test_publisher.IndexTests.test_index_links_readable_filenames) ... ok
+test_legacy_file_migrated_even_when_not_in_input (test_publisher.MigrationTests.test_legacy_file_migrated_even_when_not_in_input) ... ok
+test_legacy_kb_file_migrated_to_readable_name (test_publisher.MigrationTests.test_legacy_kb_file_migrated_to_readable_name) ... ok
+test_non_legacy_handwritten_docs_not_renamed (test_publisher.MigrationTests.test_non_legacy_handwritten_docs_not_renamed) ... ok
+test_all_source_metadata_preserved (test_publisher.PreservationTests.test_all_source_metadata_preserved) ... ok
+test_confidence_score_and_level_preserved (test_publisher.PreservationTests.test_confidence_score_and_level_preserved) ... ok
+test_content_preserved_verbatim (test_publisher.PreservationTests.test_content_preserved_verbatim) ... ok
+test_document_parses_as_valid_okf (test_publisher.PreservationTests.test_document_parses_as_valid_okf) ... ok
+test_resolution_preserved (test_publisher.PreservationTests.test_resolution_preserved) ... ok
+test_status_preserved (test_publisher.PreservationTests.test_status_preserved) ... ok
+test_malformed_facts_rejected_without_writes (test_publisher.PublishTests.test_malformed_facts_rejected_without_writes) ... ok
+test_multiple_facts_publish (test_publisher.PublishTests.test_multiple_facts_publish) ... ok
+test_rejected_fact_skipped_not_published (test_publisher.PublishTests.test_rejected_fact_skipped_not_published) ... ok
+test_single_valid_fact_publishes (test_publisher.PublishTests.test_single_valid_fact_publishes) ... ok
+test_valid_low_confidence_publishes (test_publisher.PublishTests.test_valid_low_confidence_publishes) ... ok
+test_report_shape (test_publisher.ReportTests.test_report_shape) ... ok
+test_all_stopwords_falls_back (test_publisher.SlugTests.test_all_stopwords_falls_back) ... ok
+test_readable_kebab_slug (test_publisher.SlugTests.test_readable_kebab_slug) ... ok
+test_slug_capped_on_word_boundary (test_publisher.SlugTests.test_slug_capped_on_word_boundary) ... ok
+test_slug_deterministic (test_publisher.SlugTests.test_slug_deterministic) ... ok
+test_special_characters_and_case_normalized (test_publisher.SlugTests.test_special_characters_and_case_normalized) ... ok
+test_topic_id_preferred_over_content (test_publisher.SlugTests.test_topic_id_preferred_over_content) ... ok
+test_error_after_ok_preserves_last_known_hash (test_state.ApplyTests.test_error_after_ok_preserves_last_known_hash) ... ok
+test_error_result_records_failure (test_state.ApplyTests.test_error_result_records_failure) ... ok
+test_ok_result_stores_hash_status_and_strategy (test_state.ApplyTests.test_ok_result_stores_hash_status_and_strategy) ... ok
+test_success_after_error_is_new_not_changed (test_state.ApplyTests.test_success_after_error_is_new_not_changed) ... ok
+test_different_hash_is_changed (test_state.ClassifyTests.test_different_hash_is_changed) ... ok
+test_failed_fetch_is_error (test_state.ClassifyTests.test_failed_fetch_is_error) ... ok
+test_no_stored_record_is_new (test_state.ClassifyTests.test_no_stored_record_is_new) ... ok
+test_same_hash_is_unchanged (test_state.ClassifyTests.test_same_hash_is_unchanged) ... ok
+test_stored_error_only_is_new (test_state.ClassifyTests.test_stored_error_only_is_new) ... ok
+test_file_is_human_readable_json (test_state.StateFileTests.test_file_is_human_readable_json) ... ok
+test_malformed_json_is_an_error_not_silent_reset (test_state.StateFileTests.test_malformed_json_is_an_error_not_silent_reset) ... ok
+test_missing_file_is_empty_state (test_state.StateFileTests.test_missing_file_is_empty_state) ... ok
+test_non_object_json_is_an_error (test_state.StateFileTests.test_non_object_json_is_an_error) ... ok
+test_roundtrip_preserves_all_fields (test_state.StateFileTests.test_roundtrip_preserves_all_fields) ... ok
+test_save_is_deterministic_regardless_of_insertion_order (test_state.StateFileTests.test_save_is_deterministic_regardless_of_insertion_order) ... ok
+test_save_leaves_no_temp_file_behind (test_state.StateFileTests.test_save_leaves_no_temp_file_behind) ... ok
+test_batch_records_verdicts_and_persists (test_state.UpdateStateTests.test_batch_records_verdicts_and_persists) ... ok
+test_second_run_identical_content_is_unchanged (test_state.UpdateStateTests.test_second_run_identical_content_is_unchanged) ... ok
+test_second_run_modified_content_is_changed (test_state.UpdateStateTests.test_second_run_modified_content_is_changed) ... ok
+test_cli_facts_object_form_unwrapped (test_validator.CliTests.test_cli_facts_object_form_unwrapped) ... INFO pipeline.validator: decision url=https://ads.amazon/a group=auto:0 score=0.60 status=valid rule=score-band
+ok
+test_cli_invalid_json_fails_cleanly (test_validator.CliTests.test_cli_invalid_json_fails_cleanly) ... ok
+test_cli_reads_file_and_prints_validated_array (test_validator.CliTests.test_cli_reads_file_and_prints_validated_array) ... INFO pipeline.validator: decision url=https://ads.amazon/a group=auto:0 score=0.60 status=valid rule=score-band
+INFO pipeline.validator: decision url=https://forum.example/t group=auto:1 score=0.30 status=valid_low_confidence rule=score-band reason=confidence score 0.30 is below the 0.60 valid threshold
+ok
+test_cli_reads_stdin (test_validator.CliTests.test_cli_reads_stdin) ... INFO pipeline.validator: decision url=https://ads.amazon/a group=auto:0 score=0.60 status=valid rule=score-band
+ok
+test_community_with_three_people_is_low_confidence (test_validator.ConfidenceScoringTests.test_community_with_three_people_is_low_confidence) ... ok
+test_corroboration_bonus_capped_at_030 (test_validator.ConfidenceScoringTests.test_corroboration_bonus_capped_at_030) ... ok
+test_multiple_official_sources_corroborate (test_validator.ConfidenceScoringTests.test_multiple_official_sources_corroborate) ... ok
+test_official_fact_is_valid (test_validator.ConfidenceScoringTests.test_official_fact_is_valid) ... ok
+test_score_clamped_when_constants_would_overflow (test_validator.ConfidenceScoringTests.test_score_clamped_when_constants_would_overflow) ... ok
+test_score_never_exceeds_one (test_validator.ConfidenceScoringTests.test_score_never_exceeds_one) ... ok
+test_stability_bonus_requires_unchanged_and_prior_run (test_validator.ConfidenceScoringTests.test_stability_bonus_requires_unchanged_and_prior_run) ... ok
+test_bad_source_type_rejected (test_validator.ContractTests.test_bad_source_type_rejected) ... ok
+test_missing_required_field_rejected (test_validator.ContractTests.test_missing_required_field_rejected) ... ok
+test_not_a_list_rejected (test_validator.ContractTests.test_not_a_list_rejected) ... ok
+test_near_duplicates_group_without_topic_id (test_validator.GroupingTests.test_near_duplicates_group_without_topic_id) ... ok
+test_topicless_near_duplicate_joins_topic_bucket (test_validator.GroupingTests.test_topicless_near_duplicate_joins_topic_bucket) ... ok
+test_every_decision_logged_with_rule (test_validator.LoggingTests.test_every_decision_logged_with_rule) ... ok
+test_deterministic_same_input_same_output (test_validator.OutputContractTests.test_deterministic_same_input_same_output) ... ok
+test_empty_input (test_validator.OutputContractTests.test_empty_input) ... ok
+test_extractor_confidence_pct_is_ignored (test_validator.OutputContractTests.test_extractor_confidence_pct_is_ignored) ... ok
+test_original_fields_preserved_and_input_not_mutated (test_validator.OutputContractTests.test_original_fields_preserved_and_input_not_mutated) ... ok
+test_rejected_facts_stay_in_output (test_validator.OutputContractTests.test_rejected_facts_stay_in_output) ... ok
+test_same_url_facts_are_not_independent_sources (test_validator.OutputContractTests.test_same_url_facts_are_not_independent_sources) ... ok
+test_topic_groups_are_independent (test_validator.OutputContractTests.test_topic_groups_are_independent) ... ok
+test_authority_overrides_majority_of_three (test_validator.SpecScenarioTests.test_authority_overrides_majority_of_three) ... ok
+test_basic_community_pass_two_agreeing_quality_sources (test_validator.SpecScenarioTests.test_basic_community_pass_two_agreeing_quality_sources) ... ok
+test_basic_official_pass_stable (test_validator.SpecScenarioTests.test_basic_official_pass_stable) ... ok
+test_corroboration_capped_with_four_extra_sources (test_validator.SpecScenarioTests.test_corroboration_capped_with_four_extra_sources) ... ok
+test_cross_page_contradiction_with_topic_and_high_score (test_validator.SpecScenarioTests.test_cross_page_contradiction_with_topic_and_high_score) ... ok
+test_quality_cap_overrides_raw_score (test_validator.SpecScenarioTests.test_quality_cap_overrides_raw_score) ... ok
+test_reject_threshold_is_inclusive_at_030 (test_validator.SpecScenarioTests.test_reject_threshold_is_inclusive_at_030) ... ok
+test_stability_bonus_tips_low_confidence_to_valid (test_validator.SpecScenarioTests.test_stability_bonus_tips_low_confidence_to_valid) ... ok
+test_three_agreeing_quality_community_sources_cross_into_valid (test_validator.SpecScenarioTests.test_three_agreeing_quality_community_sources_cross_into_valid) ... ok
+test_true_rejection_weak_mentions_without_agreement (test_validator.SpecScenarioTests.test_true_rejection_weak_mentions_without_agreement) ... ok
+test_two_weak_agreeing_sources_forced_low_confidence (test_validator.SpecScenarioTests.test_two_weak_agreeing_sources_forced_low_confidence) ... ok
+test_low_quality_community_only_never_valid (test_validator.ValidityTests.test_low_quality_community_only_never_valid) ... ok
+test_official_sources_contradicting_each_other_detected (test_validator.ValidityTests.test_official_sources_contradicting_each_other_detected) ... ok
+test_official_version_wins_over_community_majority (test_validator.ValidityTests.test_official_version_wins_over_community_majority) ... ok
+test_quality_community_sources_can_reach_valid (test_validator.ValidityTests.test_quality_community_sources_can_reach_valid) ... ok
+test_unsupported_fact_rejected (test_validator.ValidityTests.test_unsupported_fact_rejected) ... ok
+test_wording_level_contradiction_detected (test_validator.ValidityTests.test_wording_level_contradiction_detected) ... ok
+
+----------------------------------------------------------------------
+Ran 192 tests in 0.151s
+
+OK
