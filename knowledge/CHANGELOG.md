@@ -7,3 +7,65 @@
   management API model, per-product campaign guides, topic area list, and
   reference/ecosystem links.
   Source: https://advertising.amazon.com/API/docs/en-us/guides/overview
+
+## 2026-09-27
+- **kb-0cf9bb0a2520b482** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://github.com/amzn
+- **kb-12f3aa704808452d** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-169ba14f42ae5e99** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-16baa36c7aafcccd** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-30ffdb43e6dcabea** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-3605d0b2e8a53563** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-416c5d8f48c4b8f0** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-4cf19e80f4c3153a** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-50b6062e0f196dbf** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://github.com/amzn
+- **kb-527d848d17db8aec** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-5a989e7c2d30d624** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://github.com/amzn
+- **kb-61e147a7656f12fd** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-67a0fa914751b0ca** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://github.com/amzn
+- **kb-6a8af533e1861904** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-70e09d63525184cb** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-796c737ee36f427b** — created. resolution=complementary_merge, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-81ebe9dd165b7f9c** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-8ff2ccee0b09a882** — created. resolution=complementary_merge, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-99308df708c976fd** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-9b266759b1a5212f** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-a75e193b7a9cedd4** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-b16a6f6ac5f04527** — created. resolution=complementary_merge, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-b28562a39d986cfe** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-b3e32cb14bb7c57c** — created. resolution=complementary_merge, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us, https://advertising.amazon.com/about-api
+- **kb-c0f466d22f7388c5** — created. resolution=complementary_merge, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-c2fdfd9224ddef4c** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-cc5fdf33055fa3d3** — created. resolution=complementary_merge, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-df6609afd43c3e28** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **kb-f5a07389a40893c9** — created. resolution=complementary_merge, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/about-api
+- **kb-f9a803919e1cc147** — created. resolution=single_source, confidence_score=0.70, status=valid.
+  Sources: https://github.com/amzn
