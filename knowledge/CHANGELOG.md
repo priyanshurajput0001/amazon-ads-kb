@@ -69,3 +69,41 @@
   Sources: https://advertising.amazon.com/about-api
 - **kb-f9a803919e1cc147** — created. resolution=single_source, confidence_score=0.70, status=valid.
   Sources: https://github.com/amzn
+- **kb-466d190325f42c8c** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-5ee18284c8b07a69** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-a2448d34c1744bd9** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-b5fe81204d0952b1** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-c04c1745a94ad70c** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-c4d120565a47b262** — created. resolution=complementary_merge, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-c81a8ecdb29aaad6** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-c8eb895b76ec9f06** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-cc56a79b0240837e** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-e387832dbe66b18a** — created. resolution=complementary_merge, confidence_score=0.60, status=valid.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **kb-134c5a3aa8a5ea43** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-311811acadde18ee** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-38817a11362ca7ca** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-59b2df97a23adc65** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-6339d90384e55508** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-815a084b14bc9ca1** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-8779c57209e553f7** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-a90493655ee96caa** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-e4e31f9b4132f103** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn

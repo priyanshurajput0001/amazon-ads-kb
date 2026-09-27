@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m pipeline.orchestrate:*)",
+      "Bash(python3 -m pipeline.fetch:*)",
+      "Bash(python3 -m pipeline.extractor:*)",
+      "Bash(python3 -m pipeline.adapter:*)",
+      "Bash(python3 -m pipeline.validator:*)",
+      "Bash(python3 -m pipeline.merger:*)",
+      "Bash(python3 -m pipeline.publisher:*)",
+      "Bash(python3 -m unittest:*)"
+    ]
+  }
+}

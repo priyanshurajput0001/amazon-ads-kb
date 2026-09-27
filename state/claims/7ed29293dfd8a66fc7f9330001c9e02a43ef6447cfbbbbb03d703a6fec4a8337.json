@@ -1,0 +1,64 @@
+{
+  "claims": [
+    {
+      "claim": "Amazon's GitHub organization (github.com/amzn) hosts a repository, selling-partner-api-docs, containing documentation for developers to use to call Selling Partner APIs.",
+      "confidence": "high",
+      "quote": "This repository contains documentation for developers to use to call Selling Partner APIs.",
+      "topic_hint": "selling-partner-api-docs-repository"
+    },
+    {
+      "claim": "Amazon's GitHub organization hosts a repository, selling-partner-api-models, containing OpenAPI models for developers to use when developing software to call Selling Partner APIs.",
+      "confidence": "high",
+      "quote": "This repository contains OpenAPI models for developers to use when developing software to call Selling Partner APIs.",
+      "topic_hint": "selling-partner-api-openapi-models"
+    },
+    {
+      "claim": "Amazon's GitHub organization hosts a repository providing code samples and supplements for the Amazon Ads advanced tools center.",
+      "confidence": "high",
+      "quote": "Code samples and supplements for the Amazon Ads advanced tools center",
+      "topic_hint": "amazon-ads-advanced-tools-center"
+    },
+    {
+      "claim": "Amazon's GitHub organization hosts the official SDK for the Amazon Selling Partner API.",
+      "confidence": "high",
+      "quote": "The official SDK for Amazon Selling Partner API",
+      "topic_hint": "selling-partner-api-official-sdk"
+    },
+    {
+      "claim": "Amazon's GitHub organization includes a repository titled \"Amazon Pay API SDK (PHP)\", an SDK for the Amazon Pay API in PHP.",
+      "confidence": "medium",
+      "quote": "Amazon Pay API SDK (PHP)",
+      "topic_hint": "amazon-pay-api-sdk-php"
+    },
+    {
+      "claim": "Amazon's GitHub organization hosts smoke-framework, a light-weight server-side service framework written in the Swift programming language.",
+      "confidence": "high",
+      "quote": "A light-weight server-side service framework written in the Swift programming language.",
+      "topic_hint": "smoke-framework"
+    },
+    {
+      "claim": "Amazon's GitHub organization hosts alexa-skills-kit-js, providing SDK and example code for building voice-enabled skills for the Amazon Echo.",
+      "confidence": "high",
+      "quote": "SDK and example code for building voice-enabled skills for the Amazon Echo.",
+      "topic_hint": "alexa-skills-kit-js"
+    },
+    {
+      "claim": "Amazon's GitHub organization hosts PECOS, described as \"Prediction for Enormous and Correlated Spaces\".",
+      "confidence": "high",
+      "quote": "PECOS - Prediction for Enormous and Correlated Spaces",
+      "topic_hint": "pecos"
+    },
+    {
+      "claim": "Amazon's GitHub organization hosts a repository on computer vision basics implemented in Microsoft Excel using just formulas.",
+      "confidence": "high",
+      "quote": "Computer Vision Basics in Microsoft Excel (using just formulas)",
+      "topic_hint": "computer-vision-basics-in-microsoft-excel"
+    }
+  ],
+  "extracted_at": "2026-09-27T10:53:06+00:00",
+  "fetched_at": "2026-09-27T10:53:06+00:00",
+  "schema_version": 1,
+  "sha256": "7ed29293dfd8a66fc7f9330001c9e02a43ef6447cfbbbbb03d703a6fec4a8337",
+  "source_url": "https://github.com/amzn",
+  "status": "ok"
+}

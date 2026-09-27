@@ -1,0 +1,88 @@
+{
+  "claims": [
+    {
+      "claim": "Amazon Ads provides advanced tools that give developers the ability to programmatically create and manage campaigns, as well as retrieve performance data.",
+      "confidence": "high",
+      "quote": "Amazon Ads provides a number of advanced tools that give developers the ability to programmatically create and manage campaigns, as well as retrieve performance data.",
+      "topic_hint": "amazon-ads-api-overview"
+    },
+    {
+      "claim": "Translations of the Amazon Ads developer guides are available in select languages.",
+      "confidence": "high",
+      "quote": "Translations of these developer guides are available in select languages.",
+      "topic_hint": "developer-guides-translations"
+    },
+    {
+      "claim": "Using all Amazon Ads developer tools requires first completing an onboarding process that includes registering an application and applying for access to the API.",
+      "confidence": "high",
+      "quote": "To use all developer tools, you must first complete the onboarding process which includes registering an application and applying for access to the API.",
+      "topic_hint": "api-onboarding"
+    },
+    {
+      "claim": "Developers can use the Amazon Ads API and Amazon Marketing Stream to access performance metrics for Amazon Ads campaigns.",
+      "confidence": "high",
+      "quote": "Developers can use the Amazon Ads API and Amazon Marketing Stream to access performance metrics for Amazon Ads campaigns.",
+      "topic_hint": "reporting-and-measurement"
+    },
+    {
+      "claim": "The Amazon Ads API supports asynchronous report requests.",
+      "confidence": "high",
+      "quote": "The Ads API supports asynchronous report requests",
+      "topic_hint": "amazon-ads-api-reporting"
+    },
+    {
+      "claim": "Amazon Marketing Stream provides near real-time access to metrics through the user's AWS account.",
+      "confidence": "high",
+      "quote": "Amazon Marketing Stream provides near real-time access to metrics through your AWS account.",
+      "topic_hint": "amazon-marketing-stream"
+    },
+    {
+      "claim": "Campaigns can now be managed across ad products using a common model and a single set of API endpoints.",
+      "confidence": "high",
+      "quote": "You can now manage campaigns across ad products using a common model and a single set of API endpoints.",
+      "topic_hint": "campaign-management-overview"
+    },
+    {
+      "claim": "The new cross-ad-product campaign management capabilities are part of the Amazon Ads API v1.",
+      "confidence": "medium",
+      "quote": "To get started with campaign management in the Amazon Ads API v1, see the [campaign management overview](https://advertising.amazon.com/API/docs/en-us/guides/campaign-management/overview).",
+      "topic_hint": "campaign-management-overview"
+    },
+    {
+      "claim": "The Amazon Ads API can also be used to create and manage sponsored ads and Amazon DSP campaigns.",
+      "confidence": "high",
+      "quote": "You can also use the Amazon Ads API to create and manage sponsored ads and Amazon DSP campaigns.",
+      "topic_hint": "campaign-management-overview"
+    },
+    {
+      "claim": "Amazon Ads documentation includes a guide for creating a Sponsored Display campaign aimed at Amazon sellers or vendors.",
+      "confidence": "high",
+      "quote": "Create a Sponsored Display campaign (Amazon sellers or vendors)",
+      "topic_hint": "sponsored-display-get-started"
+    },
+    {
+      "claim": "Amazon Ads documentation includes a separate guide for creating a Sponsored Display campaign aimed at advertisers that do not sell on Amazon.",
+      "confidence": "high",
+      "quote": "Create a Sponsored Display campaign (advertisers that do not sell on Amazon)",
+      "topic_hint": "sponsored-display-get-started"
+    },
+    {
+      "claim": "The Amazon Ads advanced tools documentation is maintained in a public GitHub repository at github.com/amzn/ads-advanced-tools-docs.",
+      "confidence": "high",
+      "quote": "GitHub](https://github.com/amzn/ads-advanced-tools-docs \"Visit our repository on GitHub\")",
+      "topic_hint": "amazon-ads-docs-repository"
+    },
+    {
+      "claim": "An RSS feed for Amazon Ads API release notes is available for subscription.",
+      "confidence": "high",
+      "quote": "RSS release notes](https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml \"Subscribe to our RSS feed for release notes\")",
+      "topic_hint": "api-release-notes"
+    }
+  ],
+  "extracted_at": "2026-09-27T10:33:46+00:00",
+  "fetched_at": "2026-09-27T10:33:46+00:00",
+  "schema_version": 1,
+  "sha256": "a05d5e77c5fd5e985e9f95268dc96161e4614eb4ed715d79e5a770892a4cf865",
+  "source_url": "https://advertising.amazon.com/API/docs/en-us/guides/overview",
+  "status": "ok"
+}
