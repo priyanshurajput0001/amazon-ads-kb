@@ -210,6 +210,39 @@ definitions (today only `Discovery_Agent.md`, the Scout), while `skills/`
 holds *reference documentation* like the stage guides linked above, plus
 the skill that powers the `fetch <url>, update the bundle` command.
 
+## About CLAUDE.md
+
+`CLAUDE.md` is the rulebook of this project. Claude Code reads it
+automatically at the start of every session, so the same ground rules apply
+to every automated run and every human contribution without anyone having
+to repeat them.
+
+It is written as binding engineering rules, not suggestions. It covers:
+
+* **Purpose** — the mission: continuously discover, extract, validate,
+  merge, and publish Amazon Ads knowledge into the `knowledge/` folder.
+  It is a system meant to be re-run, not a one-shot scrape.
+* **The pipeline** — the five stages (Discover, Extract, Validate, Merge,
+  Publish) and how each stage hands structured data to the next.
+* **The document format** — exactly what every knowledge document must look
+  like: Markdown with frontmatter carrying its stable `id`, `sources`,
+  `confidence`, `status`, and `last_checked` date.
+* **The safe-to-re-run contract** — the system's hardest requirement:
+  running the same source twice must never create a duplicate. Unchanged
+  content is skipped entirely, changed content is updated in place, and
+  every topic lives in exactly one document.
+* **Division of labor** — code does the exact, repeatable work (fetching,
+  hashing, scoring, writing files); Claude does only the judgment work
+  (reading pages, classifying relationships, writing prose).
+* **Hard requirements** — no fact without a traceable source URL, no
+  invented certainty (uncertain facts must be marked `confidence: low` and
+  say why), and a priority order for when time is short: valid output
+  first, then safe-to-re-run, then working source types, then full
+  provenance tracking.
+
+For humans, it doubles as the contributor handbook: if you change how the
+pipeline behaves, CLAUDE.md is the contract your change has to keep.
+
 ## Reliability / Testing
 
 Two kinds of evidence back this system:
