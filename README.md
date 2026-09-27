@@ -97,6 +97,8 @@ used. The guides live in `.claude/skills/` — see the distinction below.
 * [Scout](./.claude/skills/SCOUT.md) — finds candidate source URLs for a
   topic (available; not part of the automatic URL flow; its runnable
   definition is `.claude/agents/Discovery_Agent.md`)
+* [Orchestrator](./.claude/skills/ORCHESTRATE.md) — the conductor that runs
+  the stages in order when you say "fetch …, update the bundle"
 * [Fetcher](./.claude/skills/FETCHER.md) — downloads pages and detects
   change
 * [Extractor](./.claude/skills/EXTRACTOR.md) — Claude reads a page and
