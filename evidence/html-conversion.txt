@@ -1,0 +1,18 @@
+# HTML/XML -> Markdown conversion: real fetch + convert (2026-09-30 01:55:11)
+# The Amazon Ads API release-notes RSS feed (Amazon's CDN, text/xml) is
+# fetched directly and converted with the stdlib converter.
+
+strategy: direct-html | content_type: markdown
+markdown chars: 70787 | sha256: 780adffbd4c8f7c5 ...
+--- first 700 chars of the converted markdown ---
+Amazon Ads API Release Notes
+ https://advertising.amazon.com/API/docs/en-us/info/release-notes
+ Description of updates to the Amazon Ads API.
+ Copyright 2015-2025, Amazon
+ Tue, 29 Sep 2026 19:02:58 GMT
+ 
+ 
+ Amazon Ads Inventory Management Unified APIs now generally available
+ The Amazon Ads Inventory Management Unified APIs are now generally available, providing unified programmatic access to inventory-related data across deals, labels, label associations, buyer seats, deal advertiser access, deal performance, deal planning, publishers, suppliers, and sellers. To get started, see the Inventory Management developer guide.
+ Tue, 29 Sep 2026 00:00:00 +0000
+ https://advertising.amazon.com/API/do

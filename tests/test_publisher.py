@@ -236,6 +236,43 @@ class IndexChangelogTests(PublisherTestCase):
         after_index = (self.kdir / "INDEX.md").read_bytes()
         self.assertNotEqual(before_index, after_index)  # new row added
 
+    def test_index_last_checked_matches_frontmatter_for_every_row(self):
+        """Regression (review 1a): rows for concepts written by THIS run had a
+        blank Last checked column. Every INDEX row's date must equal its
+        document's frontmatter last_checked — for freshly published docs,
+        for updated docs, and for untouched snapshot docs alike."""
+        self.publish(merged([
+            concept("api-access", [cfact("Approval may take 1 business day.")]),
+        ]))  # published on 2026-09-27
+        # Day 2: api-access genuinely changes; reporting is brand new.
+        self.publish(merged([
+            concept("api-access", [
+                cfact("Approval may take 1 business day."),
+                cfact("Applications may be submitted by advertisers.",
+                      sources=[src(date="2026-09-28T05:00:00+00:00")]),
+            ]),
+            concept("reporting", [cfact("The API supports asynchronous reports.")]),
+        ]), now=NOW2)
+        index = (self.kdir / "INDEX.md").read_text(encoding="utf-8")
+        rows = [line for line in index.splitlines() if line.startswith("| [")]
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            stem = row.split("](./", 1)[1].split(".md)", 1)[0]
+            cells = [c.strip() for c in row.split("|")]
+            index_date = cells[-2]  # last cell is empty after trailing |
+            meta, _ = okf.parse((self.kdir / f"{stem}.md").read_text())
+            self.assertEqual(
+                index_date, meta["last_checked"],
+                f"INDEX date for {stem} must equal its frontmatter last_checked")
+        # Concrete expectations: untouched-this-run docs keep their old date,
+        # docs written this run carry today's.
+        dates = dict(
+            (row.split("](./", 1)[1].split(".md)", 1)[0],
+             [c.strip() for c in row.split("|")][-2])
+            for row in rows)
+        self.assertEqual(dates["api-access"], "2026-09-28")  # updated this run
+        self.assertEqual(dates["reporting"], "2026-09-28")  # published this run
+
 
 class RelatedLinksTests(PublisherTestCase):
     def test_related_links_only_with_shared_source_and_overlap(self):

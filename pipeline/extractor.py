@@ -77,12 +77,14 @@ SOURCE MARKDOWN:
 
 
 def claude_cli_extract(content: str, source_url: str) -> list[dict]:
-    """LLM seam: one-shot headless Claude call (the project's agent runtime)."""
+    """LLM seam: one-shot headless Claude call (the project's agent runtime),
+    pinned to the read-only extractor agent (.claude/agents/extractor.md)."""
     if shutil.which("claude") is None:
         raise LlmError("no LLM backend available (claude CLI not found)")
     prompt = EXTRACTOR_PROMPT.format(url=source_url, content=content)
     try:
-        proc = subprocess.run(["claude", "-p", prompt], capture_output=True,
+        proc = subprocess.run(["claude", "-p", prompt, "--agent", "extractor"],
+                              capture_output=True,
                               text=True, timeout=LLM_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise LlmError(f"LLM timed out after {LLM_TIMEOUT}s") from None

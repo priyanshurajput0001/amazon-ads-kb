@@ -1,6 +1,6 @@
 ---
 id: amazon-aps-swift-packages
-title: Amazon Aps Swift Packages
+title: Amazon APS Swift Packages
 type: concept
 sources:
   - https://github.com/amzn
@@ -9,7 +9,7 @@ status: official
 last_checked: 2026-09-29
 ---
 
-# Amazon Aps Swift Packages
+# Amazon APS Swift Packages
 
 ## Details
 
@@ -18,17 +18,29 @@ last_checked: 2026-09-29
 - Amazon maintains a public GitHub repository named swift-package-manager-amazon-aps-verve.
   - confidence_score: 0.60
   - status: valid
-  - resolution: duplicate_merged
+  - resolution: single_source
+  - first_seen: 2026-09-27
+  - sources: https://github.com/amzn (official, fetched 2026-09-27T04:03:52+00:00)
+
+- Amazon maintains a public GitHub repository named swift-package-manager-amazon-aps-mobilefuse.
+  - confidence_score: 0.60
+  - status: valid
+  - resolution: single_source
+  - first_seen: 2026-09-27
+  - sources: https://github.com/amzn (official, fetched 2026-09-27T04:03:52+00:00)
+
+- Amazon maintains a public GitHub repository named swift-package-manager-amazon-aps-inmobi.
+  - confidence_score: 0.60
+  - status: valid
+  - resolution: single_source
   - first_seen: 2026-09-27
   - sources: https://github.com/amzn (official, fetched 2026-09-27T04:03:52+00:00)
 
 ## Sources
 
-- https://github.com/amzn — official, fetched 2026-09-27T04:03:52+00:00 (confirmed 1 fact)
+- https://github.com/amzn — official, fetched 2026-09-27T04:03:52+00:00 (confirmed 3 facts)
 
 ## Related
 
-- [Selling Partner API Postman](./selling-partner-api-postman.md)
-- [Selling Partner Agentic Toolkit](./selling-partner-agentic-toolkit.md)
-- [Amazon Maintains Public Github Repository Selling Partner API](./amazon-maintains-public-github-repository-selling-partner-api.md)
-- [Ads Events API Gtm Tag](./ads-events-api-gtm-tag.md)
+- [Selling Partner API](./selling-partner-api.md)
+- [MCP Server And Developer Tools](./mcp-server-and-developer-tools.md)

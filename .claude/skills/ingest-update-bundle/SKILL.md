@@ -34,6 +34,21 @@ report.
    The pipeline stage that downloads pages is still named **Fetch**
    internally; only the user-facing command is `ingest`.
 
+   The AI judgment inside that command runs as three read-only Claude Code
+   agents (`.claude/agents/`), pinned per seam by the Python stages:
+
+   - **extractor** — claim extraction per fetched page
+     (`pipeline/extractor.py` -> `claude -p --agent extractor`);
+   - **merge-judge** — duplicate/conflicting/complementary labels for fact
+     pairs (`pipeline/merger.py`);
+   - **topic-router** — topic choice for keyword-ambiguous claims
+     (`pipeline/topics.py`).
+
+   The relevance gate and the concept-match seam use one-shot prompts
+   without an agent file (single yes/no questions). A PreToolUse hook
+   (`.claude/settings.json` -> `scripts/lint_bundle.py --pretooluse`)
+   blocks any Write/Edit that would leave `knowledge/` invalid.
+
 3. Read the JSON report and summarize it for the user, quoting its numbers:
    - per URL: fetch verdict (`new`/`changed`/`unchanged`/`error`), the stages
      that ran for it, and if it stopped early, `stopped_at` + `error`;

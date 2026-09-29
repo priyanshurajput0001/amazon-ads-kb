@@ -3,7 +3,11 @@
 Chain (first success wins, failures recorded, never fatal to the batch):
   1. `tvly extract` basic    -> markdown
   2. `tvly extract` advanced -> markdown
-  3. direct HTTP GET         -> html
+  3. direct HTTP GET         -> markdown when the body is plain text, or
+                               HTML that CONVERTS to enough visible text
+                               (stdlib html.parser — pipeline/htmlconvert.py,
+                               strategy "direct-html"); otherwise honestly
+                               labeled html (the pipeline stops there)
 
 Every result carries the strategy used so provenance can note how it was
 fetched. JS-rendered SPA pages often fail the whole chain; callers should
@@ -28,6 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from pipeline import htmlconvert
 from pipeline.state import cache_content, update_state
 
 TVLY_TIMEOUT = 60  # seconds, matches --timeout upper bound
@@ -44,7 +49,7 @@ class FetchError(Exception):
 @dataclass
 class FetchResult:
     url: str
-    strategy: str  # tvly-basic | tvly-advanced | direct
+    strategy: str  # tvly-basic | tvly-advanced | direct | direct-html
     content_type: str  # markdown | html
     title: str | None
     content: str
@@ -105,11 +110,27 @@ def _direct(url: str, fetched_at: str) -> FetchResult | None:
     if not content.strip():
         return None
     # Plain-text bodies (text/plain, text/markdown — e.g. raw.githubusercontent
-    # files) ARE the readable content; anything else (HTML shells, JS apps)
-    # is honestly labeled html so the pipeline refuses to extract it.
-    kind = "markdown" if content_type in ("text/plain", "text/markdown") \
-        else "html"
-    return FetchResult(url=url, strategy="direct", content_type=kind, title=None,
+    # files) ARE the readable content. HTML bodies are converted with the
+    # stdlib converter (pipeline/htmlconvert.py) when they carry enough
+    # visible text to be worth extracting; a JS shell or empty reply keeps
+    # the honest "html" label so the pipeline stops rather than extracting
+    # noise. The sha is over the content the pipeline will actually see.
+    if content_type in ("text/plain", "text/markdown"):
+        return FetchResult(url=url, strategy="direct", content_type="markdown",
+                           title=None, content=content,
+                           sha256=_sha256(content), fetched_at=fetched_at)
+    # HTML pages and XML feeds (e.g. the Amazon Ads API release-notes RSS
+    # feed, served as text/xml from Amazon's CDN) convert with the stdlib
+    # converter when they carry enough visible text; shells stay honest.
+    if content_type in ("text/html", "text/xml", "application/xml",
+                        "application/rss+xml") \
+            and htmlconvert.convertible(content):
+        markdown = htmlconvert.html_to_markdown(content)
+        return FetchResult(url=url, strategy="direct-html",
+                           content_type="markdown", title=None,
+                           content=markdown, sha256=_sha256(markdown),
+                           fetched_at=fetched_at)
+    return FetchResult(url=url, strategy="direct", content_type="html", title=None,
                        content=content, sha256=_sha256(content), fetched_at=fetched_at)
 
 

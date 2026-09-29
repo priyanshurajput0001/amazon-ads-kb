@@ -17,7 +17,7 @@ from pipeline.merger import (
     _needs_llm,
     merge_facts,
 )
-from pipeline.concepts import canonical_tokens
+from pipeline.concepts import canonical_tokens, jaccard
 
 URL = "https://advertising.amazon.com/API/docs/en-us/test"
 URL2 = "https://github.com/amzn/some-repo"
@@ -66,6 +66,117 @@ def llm_match_no(new_claim, title, existing_claims):
 
 def llm_match_yes(new_claim, title, existing_claims):
     return True
+
+
+class AudienceSplitRegressionTests(unittest.TestCase):
+    """Regression (review 1c): the two Sponsored Display get-started facts —
+    a guide 'for sellers or vendors' and a SEPARATE guide 'for advertisers
+    that do not sell on Amazon' — are COMPLEMENTARY audience-split facts,
+    not a contradiction. They were both stamped unresolved_conflict because
+    the deterministic negation tripwire fired on the 'do not sell' inside the
+    audience phrase. Only true same-attribute contradictions (a license, a
+    number) may be conflicts."""
+
+    SELLERS = ("Amazon Ads documentation includes a guide for creating a "
+               "Sponsored Display campaign aimed at Amazon sellers or vendors.")
+    NON_SELLERS = ("Amazon Ads documentation includes a separate guide for "
+                   "creating a Sponsored Display campaign aimed at advertisers "
+                   "that do not sell on Amazon.")
+
+    def test_audience_split_facts_coexist_not_unresolved_conflict(self):
+        def real_classifier_should_say(a, b):
+            return "complementary"
+
+        out = merge_facts(
+            [fact(self.SELLERS, URL, D2, hint="sponsored-display-get-started"),
+             fact(self.NON_SELLERS, URL, D2, hint="sponsored-display-get-started")],
+            classify_llm=real_classifier_should_say, match_llm=llm_match_no)
+        self.assertEqual(len(out["concepts"]), 1)
+        concept = out["concepts"][0]
+        self.assertEqual(len(concept["facts"]), 2)   # both coexist
+        self.assertEqual(concept["conflicts"], [])   # nothing superseded
+        contents = {f["content"] for f in concept["facts"]}
+        self.assertEqual(contents, {self.SELLERS, self.NON_SELLERS})
+        for f in concept["facts"]:
+            self.assertNotEqual(f["resolution"], "unresolved_conflict")
+
+    def test_negation_flip_still_conflicts_when_claim_is_otherwise_identical(self):
+        # A true "X" vs "not X" contradiction on the same attribute keeps its
+        # deterministic conflict — the claims share everything but the negation.
+        a = canonical_tokens("Sponsored Brands campaigns support video creative.")
+        b = canonical_tokens("Sponsored Brands campaigns do not support video "
+                             "creative.")
+        self.assertEqual(_classify_deterministic(a, b), "conflicting")
+
+    def test_negation_inside_audience_phrase_is_not_deterministically_conflicting(self):
+        # 0.625 overlap, negation only inside the audience phrase: NOT a
+        # deterministic conflict — the LLM seam decides (complementary).
+        a = canonical_tokens(self.SELLERS)
+        b = canonical_tokens(self.NON_SELLERS)
+        self.assertGreaterEqual(jaccard(a, b), 0.5)  # used to trip the wire
+        self.assertIsNone(_classify_deterministic(a, b))
+
+
+class PairwiseStallBoundsTests(unittest.TestCase):
+    """Bounds that keep a big topic concept from stalling the pipeline in
+    O(N^2) one-shot LLM calls (the 2026-09-30 migration froze >20 minutes
+    inside the ~30-fact github topic)."""
+
+    def test_same_extraction_pairs_are_never_classified(self):
+        """Facts from ONE extraction (same URL, same content sha) were emitted
+        by the Extractor as distinct claims of one page: no pair call at all —
+        deterministic or LLM — may run between them."""
+        def explode(a, b):
+            raise AssertionError("same-extraction pair reached the seam")
+
+        claims = [
+            "The reporting API offers asynchronous kappa lambda requests.",
+            "Bulksheet exports mention kappa lambda elsewhere on the page.",
+            "A third kappa lambda statement about something unrelated.",
+        ]
+        out = merge_facts(
+            [fact(c, URL, D2, hint="one-topic", sha256="deadbeef") for c in claims],
+            classify_llm=explode, match_llm=llm_match_no)
+        self.assertEqual(len(out["concepts"]), 1)
+        self.assertEqual(len(out["concepts"][0]["facts"]), 3)  # all coexist
+
+    def test_cross_extraction_pairs_still_classified(self):
+        """The skip must not swallow real cross-extraction work: a reworded
+        re-extraction (different sha) still collapses as a duplicate."""
+        a = fact("Amazon Ads API supports asynchronous report requests.",
+                 URL, D1, sha256="version-1")
+        b = fact("Asynchronous report requests are supported by the Amazon "
+                 "Ads API.", URL, D2, sha256="version-2")
+        out = merge_facts([a, b], classify_llm=llm_yes, match_llm=llm_match_no)
+        self.assertEqual(len(out["concepts"][0]["facts"]), 1)
+        self.assertEqual(out["concepts"][0]["facts"][0]["resolution"],
+                         "duplicate_merged")
+
+    def test_pairwise_llm_calls_capped_per_concept(self):
+        """At most PAIR_LLM_CAP seam calls per concept; undecided pairs
+        beyond the cap coexist instead of stalling the run."""
+        from pipeline.merger import PAIR_LLM_CAP
+
+        calls = []
+
+        def seam(a, b):
+            calls.append((a["content"][:20], b["content"][:20]))
+            return "complementary"
+
+        # 12 facts sharing exactly {kappa, lambda} — every pair has
+        # sim 2/8 = 0.25 (deterministically undecided) but >= 2 shared
+        # informative tokens, so all C(12,2) = 66 pairs are LLM-eligible.
+        facts = [fact(f"kappa lambda u{i}a u{i}b u{i}c",
+                      url=f"https://s{i}.example/x", date=D1, sha256=f"s{i}",
+                      hint="one-topic")
+                 for i in range(12)]
+        self.assertEqual(len(facts) * (len(facts) - 1) // 2, 66)  # > cap
+        out = merge_facts(facts, classify_llm=seam, match_llm=llm_match_no)
+        self.assertEqual(len(calls), PAIR_LLM_CAP)
+        # every fact survives; none was merged or dropped by the overflow
+        concept = out["concepts"][0]
+        self.assertEqual(len(concept["facts"]), 12)
+        self.assertEqual(concept["conflicts"], [])
 
 
 class ContractTests(unittest.TestCase):

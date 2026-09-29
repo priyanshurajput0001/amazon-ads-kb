@@ -78,6 +78,132 @@ class CanonicalizationTests(unittest.TestCase):
         self.assertEqual(readable_slug("The Amazon Ads API!"), "amazon-ads-api")
 
 
+class NoSingleNoDuplicateTests(unittest.TestCase):
+    """Review step 2: one LLM 'no' on a paraphrase must not create a second
+    near-duplicate document.
+
+    Three defenses, in order:
+      1. overlap >= AUTO_SAME (the documented deterministic cutoff, 0.80):
+         merge with NO LLM call at all — a no-answering seam cannot split it;
+      2. ambiguous band [CANDIDATE_MIN, AUTO_SAME): the seam is asked twice —
+         first with a bounded preview, then, on 'no', with the concept's FULL
+         fact list; only TWO 'no' answers reject the candidate;
+      3. every candidate rejected -> genuinely new concept.
+    """
+
+    def test_paraphrase_merges_even_when_seam_answers_no(self):
+        """The documented cutoff: a reworded fact with >= AUTO_SAME overlap
+        adopts the existing concept deterministically. The stub seam answers
+        'no' — and is never even consulted."""
+        existing = {"ads-api-reporting": {
+            "id": "ads-api-reporting", "title": "Ads Api Reporting",
+            "facts": [fact("The Amazon Ads API supports asynchronous report "
+                           "requests.")],
+        }}
+        calls = []
+
+        def always_no(new_claim, title, existing_claims):
+            calls.append(new_claim)
+            return False
+
+        reword = fact("Asynchronous report requests are supported by the "
+                      "Amazon Ads API.")
+        self.assertGreaterEqual(
+            jaccard(canonical_tokens(reword["content"]),
+                    canonical_tokens(existing["ads-api-reporting"]["facts"][0]
+                                     ["content"])),
+            concepts.AUTO_SAME)
+        facts, new = concepts.assign_concepts([reword], existing,
+                                              match_llm=always_no)
+        self.assertEqual(facts[0]["concept_id"], "ads-api-reporting")
+        self.assertEqual(new, {})
+        self.assertEqual(calls, [])  # the seam was never consulted
+
+    def test_ambiguous_band_second_ask_with_full_fact_list_rescues_merge(self):
+        """A fact in the ambiguous band whose best paraphrase evidence sits in
+        a LATE fact of the concept: the preview ask says no, the full-list
+        retry says yes -> merge. Only two 'no's create a new concept."""
+        late_fact = ("Asynchronous report requests are supported at scale by "
+                     "the Amazon Ads API.")
+        existing = {"reporting-api": {
+            "id": "reporting-api", "title": "Reporting Api",
+            "facts": [fact("Export APIs replace the deprecated snapshots APIs.")
+                      for _ in range(concepts.MATCH_PREVIEW)]
+                      + [fact(late_fact)],
+        }}
+        asks = []
+
+        def no_on_preview_yes_on_full(new_claim, title, existing_claims):
+            asks.append(len(existing_claims))
+            return len(existing_claims) > concepts.MATCH_PREVIEW
+
+        new_fact = fact("Asynchronous report requests are supported at scale.",
+                        url="https://b.example/y")
+        best = jaccard(canonical_tokens(new_fact["content"]),
+                       canonical_tokens(late_fact))
+        self.assertLess(best, concepts.AUTO_SAME)      # ambiguous band...
+        self.assertGreaterEqual(best, concepts.CANDIDATE_MIN)  # ...but a candidate
+        facts, new = concepts.assign_concepts([new_fact], existing,
+                                              match_llm=no_on_preview_yes_on_full)
+        self.assertEqual(facts[0]["concept_id"], "reporting-api")
+        self.assertEqual(new, {})
+        self.assertEqual(asks, [concepts.MATCH_PREVIEW,
+                                len(existing["reporting-api"]["facts"])])
+
+    def test_ambiguous_band_two_no_answers_create_new_concept(self):
+        existing = {"reporting-api": {
+            "id": "reporting-api", "title": "Reporting Api",
+            "facts": [fact("Export APIs replace the deprecated snapshots APIs.")],
+        }}
+        calls = []
+
+        def always_no(new_claim, title, existing_claims):
+            calls.append((new_claim[:30], len(existing_claims)))
+            return False
+
+        # ~0.5-0.6 overlap: inside the LLM band, below AUTO_SAME
+        borderline = fact("Asynchronous report requests are supported at "
+                          "scale by the API.")
+        facts, new = concepts.assign_concepts([borderline], existing,
+                                              match_llm=always_no)
+        self.assertNotEqual(facts[0]["concept_id"], "reporting-api")
+        self.assertIn(facts[0]["concept_id"], new)
+        # exactly two asks: preview, then full list — both answered no
+        self.assertEqual(calls, [(borderline["content"][:30], 1),
+                                  (borderline["content"][:30], 1)])
+
+    def test_retry_uses_the_full_fact_list_not_the_preview(self):
+        existing = {"github-repos": {
+            "id": "github-repos", "title": "Github Repos",
+            "facts": [fact(f"Repository fact number {i} about open source.")
+                      for i in range(concepts.MATCH_PREVIEW + 4)],
+        }}
+        seen_sizes = []
+
+        def record(new_claim, title, existing_claims):
+            seen_sizes.append(len(existing_claims))
+            return False
+
+        borderline = fact("Repository facts exist about open source code.",
+                          url="https://b.example/y")
+        concepts.assign_concepts([borderline], existing, match_llm=record)
+        self.assertEqual(seen_sizes,
+                         [concepts.MATCH_PREVIEW,
+                          len(existing["github-repos"]["facts"])])
+
+    def test_clearly_unrelated_fact_still_creates_new_concept(self):
+        existing = {"license": {
+            "id": "license", "title": "License",
+            "facts": [fact("The repository is licensed under MIT-0.")],
+        }}
+        facts, new = concepts.assign_concepts(
+            [fact("Bulksheets is a spreadsheet-based tool for sponsored ads "
+                  "campaigns.", url="https://advertising.amazon.com/y")],
+            existing, match_llm=llm_says_yes)
+        self.assertNotEqual(facts[0]["concept_id"], "license")
+        self.assertEqual(len(new), 1)
+
+
 class AssignConceptsTests(unittest.TestCase):
     def test_reworded_fact_adopts_existing_concept_without_llm(self):
         existing = {"ads-api-reporting": {
@@ -155,6 +281,8 @@ class AssignConceptsTests(unittest.TestCase):
 
     def test_candidate_order_is_deterministic(self):
         # Two concepts with equal overlap: candidates visited id-ascending.
+        # Each candidate is now asked twice (preview, then full list) — a
+        # 'no' must be confirmed before the candidate is rejected.
         existing = {
             "bbb-concept": {"id": "bbb-concept", "title": "Bbb",
                             "facts": [fact("The API supports bulk sheet "
@@ -172,7 +300,7 @@ class AssignConceptsTests(unittest.TestCase):
         # Reworded so overlap lands in the LLM band, not the deterministic one.
         new = fact("Campaign bulk operations with sheets are supported at scale.")
         concepts.assign_concepts([new], existing, match_llm=spy)
-        self.assertEqual(seen, ["Aaa", "Bbb"])
+        self.assertEqual(seen, ["Aaa", "Aaa", "Bbb", "Bbb"])
 
     def test_new_id_coined_from_unanimous_hint(self):
         a = fact("Approval may take 1 business day.", topic_hint="api-access")

@@ -1,0 +1,107 @@
+{
+  "1647fd7d70811442f327bffddd515b03f4cf977940be7d8acb4ce0ff080c26a5": {
+    "claim": "Amazon maintains a GitHub organization at github.com/amzn that lists its open-source repositories.",
+    "date": "2026-09-27",
+    "decided_by": "llm",
+    "reason": "borderline claim judged by the LLM seam",
+    "url": "https://github.com/amzn"
+  },
+  "1f32a0cb2cb95fa277a70b959024e2dc3ba8ab93842df301f0450e9fddb08a3b": {
+    "claim": "Amazon's GitHub organization (github.com/amzn) lists 176 repositories.",
+    "date": "2026-09-27",
+    "decided_by": "llm",
+    "reason": "borderline claim judged by the LLM seam",
+    "url": "https://github.com/amzn"
+  },
+  "20cf407ea9a5e2f9ea096ed1326abc3e4d651a5e12acc111ccd29acad79d3656": {
+    "claim": "Amazon maintains an organization on GitHub under the name amzn (github.com/amzn).",
+    "date": "2026-09-27",
+    "decided_by": "llm",
+    "reason": "borderline claim judged by the LLM seam",
+    "url": "https://github.com/amzn"
+  },
+  "287e402b8848c2eba54ad6b69cb92305c0a58bacb5bce309d185709b5898298e": {
+    "claim": "Amazon's GitHub organization hosts smoke-framework, a light-weight server-side service framework written in the Swift programming language.",
+    "date": "2026-09-27",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): smok",
+    "url": "https://github.com/amzn"
+  },
+  "30400ffdcdeeede23a61eb2bc7db836b28dbaa40479410d0e5e9e52bdabc6a65": {
+    "claim": "Amazon's GitHub organization hosts PECOS, described as \"Prediction for Enormous and Correlated Spaces\".",
+    "date": "2026-09-27",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): peco",
+    "url": "https://github.com/amzn"
+  },
+  "3146d1f7563533cf0222d27ded74da8c9a68a726e1bebc3441cb50e9b5d4b4c1": {
+    "claim": "Amazon's GitHub organization hosts a repository on computer vision basics implemented in Microsoft Excel using just formulas.",
+    "date": "2026-09-27",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): excel, vision",
+    "url": "https://github.com/amzn"
+  },
+  "360bf822daa2573c24084206b6bd00e1624b75dad617d76f15951de1a70ff739": {
+    "claim": "Amazon's GitHub organization hosts alexa-skills-kit-js, providing SDK and example code for building voice-enabled skills for the Amazon Echo.",
+    "date": "2026-09-27",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): alexa, echo, voic",
+    "url": "https://github.com/amzn"
+  },
+  "458665b2950ff72a9917007dd768f44f5e8cb9e34378d9316ffdcf5b7f41a845": {
+    "claim": "The top languages across Amazon's GitHub repositories are Python, Java, Swift, TypeScript, and JavaScript.",
+    "date": "2026-09-27",
+    "decided_by": "llm",
+    "reason": "borderline claim judged by the LLM seam",
+    "url": "https://github.com/amzn"
+  },
+  "84a3c7e31981014fc3715fb83f0da955dbc557a72b6c101a21652c412d305abf": {
+    "claim": "Amazon's alexa-skills-kit-js repository provides SDK and example code for building voice-enabled skills for the Amazon Echo.",
+    "date": "2026-09-27",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): alexa, echo, voic",
+    "url": "https://github.com/amzn"
+  },
+  "9cdeb2fe490eebd7880353238c6523c698dcd326ea1f341d7df72e20d0a9465d": {
+    "claim": "Amazon's GitHub organization profile links to https://developer.amazon.com/ as its website.",
+    "date": "2026-09-27",
+    "decided_by": "llm",
+    "reason": "borderline claim judged by the LLM seam",
+    "url": "https://github.com/amzn"
+  },
+  "ae0ec60e1f36c4025ade013b4a8fc47107be5fb62c42e74ae02031408ac2cb48": {
+    "claim": "Amazon's GitHub organization includes a repository titled \"Amazon Pay API SDK (PHP)\", an SDK for the Amazon Pay API in PHP.",
+    "date": "2026-09-27",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): pay",
+    "url": "https://github.com/amzn"
+  },
+  "bc70ff27a3edf8862da400cc6aa64c0d3cffdd8071aac2323fbf638332d09801": {
+    "claim": "The most used topics on Amazon's GitHub repositories include amazon, aws, open-source-tooling, security-tools, and zeek-package.",
+    "date": "2026-09-27",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): zeek",
+    "url": "https://github.com/amzn"
+  },
+  "de4a1da3e4bffb0bd5c136826ca005e7970bedfc7da1bf270b27b57c26678428": {
+    "claim": "Amazon's GitHub organization includes an Amazon Pay API SDK repository for PHP.",
+    "date": "2026-09-27",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): pay",
+    "url": "https://github.com/amzn"
+  },
+  "dedeb9a9be7b8cb16be478724910384ed3764626305fe8f7e1527b904ff18db3": {
+    "claim": "The alexa-skills-kit-js repository is archived.",
+    "date": "2026-09-27",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): alexa",
+    "url": "https://github.com/amzn"
+  },
+  "e9aa114c85204d061a1279616b9528dcc16d760a35b879580a591450eae06a00": {
+    "claim": "Amazon's GitHub organization profile shows approximately 2.9k followers.",
+    "date": "2026-09-27",
+    "decided_by": "llm",
+    "reason": "borderline claim judged by the LLM seam",
+    "url": "https://github.com/amzn"
+  }
+}

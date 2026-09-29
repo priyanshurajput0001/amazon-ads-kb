@@ -72,8 +72,10 @@ CHANGELOG_NAME = "CHANGELOG.md"
 HIGH_MIN = 0.60
 MEDIUM_MIN = 0.30
 
-# Related-concept links: shared source AND at least this token overlap.
-RELATED_MIN = 0.20
+# Related-concept links: shared source AND at least this NON-GENERIC token
+# overlap (amazon/ads/api/... are excluded — in this corpus every document
+# shares them, so they cannot discriminate; see related_concepts below).
+RELATED_MIN = 0.10
 RELATED_MAX = 5
 
 INDEX_HEADER = ["# Knowledge Index", "",
@@ -162,29 +164,33 @@ def build_document(concept: dict, last_checked: str, related: list[str]) -> str:
 
 
 def _doc_tokens(concept: dict) -> frozenset[str]:
+    """Non-generic canonical tokens of a concept's material (title + facts).
+    GENERIC_TOKENS (amazon, ads, api, ...) are dropped: in this corpus every
+    topic document contains them, so they cannot evidence relatedness."""
     tokens = concepts.canonical_tokens(concept.get("title") or "")
     for f in concept.get("facts", []):
         tokens |= concepts.canonical_tokens(f["content"])
-    return tokens
+    return tokens - concepts.GENERIC_TOKENS
 
 
 def related_concepts(cid: str, concept: dict,
                      snapshot: dict[str, dict]) -> list[str]:
     """Deterministic, evidence-backed cross-links: a concept is related to
-    another when they share at least one source URL AND their material
-    overlaps by >= RELATED_MIN. Top RELATED_MAX by (overlap desc, id asc).
+    another when they share at least one source URL AND their NON-GENERIC
+    material overlaps by >= RELATED_MIN. Top RELATED_MAX by (overlap desc,
+    id asc).
 
-    Measured justification for the conservative threshold (2026-09-29, the
-    real 7-concept fresh-ingest bundle): all 21 concept pairs shared their
-    source (one multi-topic documentation page), yet token overlap ranged
-    0.028-0.156 — below RELATED_MIN — because those concepts are separate
-    precisely because they cover DIFFERENT subjects of that page (onboarding
-    vs endpoints vs release notes vs use cases). Shared-source alone would
-    have linked everything-from-the-same-page, which is link spam, not
-    evidence of relatedness. Bundles whose concepts genuinely overlap
-    (e.g. the production 37-concept bundle) do produce links under this
-    rule. Zero links in a fresh single-page bundle is the correct outcome,
-    not a defect."""
+    Measured justification (2026-09-30, the routed 15-topic bundle over all
+    106 recorded claims): with shared sources nearly universal (the big
+    documentation pages feed many topics), generic-token overlap is noise —
+    every pair scores 0.02-0.21 on it. Over non-generic tokens the natural
+    clusters separate cleanly (github-repos<->selling-partner-api 0.16,
+    mcp-tools<->selling-partner-api 0.20, reporting<->programmatic 0.15,
+    reporting<->stream 0.12, access<->reporting 0.11 ...), while unrelated
+    pairs (release-notes<->anything, sponsored-display<->anything) sit near
+    zero because their subjects genuinely do not overlap. A threshold of
+    0.10 links the real clusters and leaves thin single-subject documents
+    honestly unlinked instead of decorating them with fake siblings."""
     mine_urls = {s["url"] for f in concept.get("facts", [])
                  for s in f["sources"]}
     mine_tokens = _doc_tokens(concept)
@@ -360,7 +366,11 @@ def publish_concepts(
             continue
         final_text = build_document(concept, today, related)
         writes[path] = final_text
-        written_concepts[cid] = concept
+        # The written concept carries the date actually stamped in the
+        # document so the INDEX row rebuilt from it can never disagree with
+        # the file's frontmatter (review 1a: the column was blank because the
+        # raw Merger concept has no last_checked at all).
+        written_concepts[cid] = {**concept, "last_checked": today}
         if current is None:
             counts["published"] += 1
             changelog_entries.append(("created", concept, today))

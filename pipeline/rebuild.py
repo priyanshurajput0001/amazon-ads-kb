@@ -41,10 +41,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-from pipeline import concepts, okf
+from pipeline import concepts, okf, topics
 from pipeline.adapter import build_facts
 from pipeline.merger import claude_cli_classify, merge_facts
 from pipeline.publisher import publish_concepts
+from pipeline.relevance import DEFAULT_DROPPED_PATH, DEFAULT_GATE_CACHE_PATH
+from pipeline.relevance import claude_cli_gate, filter_claims
 from pipeline.state import SourceState, load_state
 from pipeline.validator import validate_facts
 
@@ -61,9 +63,17 @@ class RebuildError(RuntimeError):
     """The rebuild could not be completed; the old bundle is untouched."""
 
 
-def collect_facts(state_path: Path, claims_dir: Path) -> tuple[list[dict], int]:
+def collect_facts(
+    state_path: Path,
+    claims_dir: Path,
+    gate_llm=claude_cli_gate,
+    dropped_path: str | Path | None = DEFAULT_DROPPED_PATH,
+    cache_path: str | Path | None = DEFAULT_GATE_CACHE_PATH,
+) -> tuple[list[dict], int]:
     """Facts from EVERY recorded claims file (all content versions), in a
-    deterministic (source_url, fetched_at, sha256) order."""
+    deterministic (source_url, fetched_at, sha256) order — after the
+    relevance gate drops off-topic claims (audit log + cached verdicts keep
+    re-runs byte-identical)."""
     states = load_state(state_path)
     files = []
     for path in sorted(claims_dir.glob("*.json")):
@@ -80,12 +90,19 @@ def collect_facts(state_path: Path, claims_dir: Path) -> tuple[list[dict], int]:
 
     facts: list[dict] = []
     for source_url, fetched_at, sha, doc, path in files:
+        kept, dropped = filter_claims(doc, llm=gate_llm,
+                                      dropped_path=dropped_path,
+                                      cache_path=cache_path,
+                                      today=fetched_at[:10] or None)
+        if dropped:
+            logger.info("gate dropped %d off-topic claim(s) from %s",
+                        len(dropped), source_url)
         committed = states.get(source_url)
         is_current = bool(committed and committed.sha256 == sha)
         version_state = SourceState(
             url=source_url, status="ok", fetched_at=fetched_at, sha256=sha,
             strategy=committed.strategy if is_current else None)
-        built = build_facts(doc, version_state)
+        built = build_facts({**doc, "claims": kept}, version_state)
         for fact in built:
             fact["rebuild_version"] = "current" if is_current else "historical"
         facts.extend(built)
@@ -97,13 +114,16 @@ def collect_facts(state_path: Path, claims_dir: Path) -> tuple[list[dict], int]:
 
 def lint_bundle(kdir: Path) -> list[str]:
     """Validate a complete bundle: every document parses as an OKF concept,
-    no duplicate ids, INDEX links resolve both ways. Returns problems ([])."""
+    no duplicate ids or titles, INDEX links resolve both ways, and every
+    in-document Related link targets an existing concept. Returns problems
+    ([]). This is the lint the rebuild gate and the PreToolUse hook run."""
     problems: list[str] = []
     docs = [p for p in sorted(kdir.glob("*.md"))
             if p.name not in ("INDEX.md", "CHANGELOG.md")]
     if not docs:
         return ["bundle contains no concept documents"]
     ids: set[str] = set()
+    titles: dict[str, str] = {}
     for path in docs:
         try:
             meta, body = okf.parse(path.read_text(encoding="utf-8"), path)
@@ -112,15 +132,26 @@ def lint_bundle(kdir: Path) -> list[str]:
             continue
         if meta["type"] != concepts.CONCEPT_DOC_TYPE:
             problems.append(f"{path.name}: type is {meta['type']!r}")
+        if meta["id"] != path.stem:
+            problems.append(f"{path.name}: id {meta['id']!r} != filename stem")
+        if not meta.get("sources"):
+            problems.append(f"{path.name}: sources list is empty")
         if meta["id"] in ids:
             problems.append(f"{path.name}: duplicate id {meta['id']}")
         ids.add(meta["id"])
+        if meta["title"] in titles:
+            problems.append(f"{path.name}: duplicate title {meta['title']!r} "
+                            f"(also {titles[meta['title']]})")
+        titles[meta["title"]] = path.name
         try:
             facts, conflicts = concepts.parse_body(body)
             concepts.check_concept({"id": meta["id"], "facts": facts,
                                     "conflicts": conflicts})
         except concepts.ConceptError as exc:
             problems.append(f"{path.name}: {exc}")
+        for target in concepts.related_link_targets(body):
+            if target not in {p.stem for p in docs}:
+                problems.append(f"{path.name}: dangling link ./{target}.md")
     index_path = kdir / "INDEX.md"
     if not index_path.exists():
         problems.append("INDEX.md missing")
@@ -142,21 +173,42 @@ def rebuild_bundle(
     knowledge_dir: Path = DEFAULTS["knowledge"],
     classify_llm=claude_cli_classify,
     match_llm=concepts.claude_cli_concept_match,
+    choose_llm=topics.claude_cli_choose_topic,
+    gate_llm=claude_cli_gate,
     now: datetime.datetime | None = None,
 ) -> dict:
     """Regenerate the bundle from recorded claims. The old bundle stays in
-    place unless the new one builds AND validates cleanly."""
+    place unless the new one builds AND validates cleanly.
+
+    Re-uses the recorded claims files — no re-fetch, no re-extraction; the
+    LLM seams run only for pair classification, ambiguous topic routing and
+    borderline relevance calls. Concept identity comes from the topic
+    taxonomy: the rebuilt bundle has one document per TOPIC (plus taxonomy
+    sub-topics), never per sentence. The gate's audit log and verdict cache
+    live next to the state file (state/dropped.json, state/gate_cache.json),
+    so a custom state_path keeps them in its own directory.
+    """
     now = now or datetime.datetime.now(datetime.UTC)
     knowledge_dir = Path(knowledge_dir)
+    state_dir = Path(state_path).parent
 
-    facts, files = collect_facts(state_path, claims_dir)
+    def route(fact: dict) -> str | None:
+        slug, _ = topics.route_fact(fact["content"], fact.get("topic_hint"),
+                                    choose_llm=choose_llm)
+        return slug
+
+    facts, files = collect_facts(
+        state_path, claims_dir, gate_llm=gate_llm,
+        dropped_path=state_dir / "dropped.json",
+        cache_path=state_dir / "gate_cache.json")
     if not facts:
         raise RebuildError("no claims found; nothing to rebuild from")
     validated = validate_facts(facts)
     participating = [f for f in validated if f["status"] != "rejected"]
     rejected = [f for f in validated if f["status"] == "rejected"]
     merged = merge_facts(participating, existing={}, classify_llm=classify_llm,
-                         match_llm=match_llm, today=now.date().isoformat())
+                         match_llm=match_llm, today=now.date().isoformat(),
+                         route=route)
 
     with tempfile.TemporaryDirectory(prefix="kb-rebuild-") as tmpname:
         staging = Path(tmpname) / "knowledge"

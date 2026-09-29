@@ -9,7 +9,23 @@
       "Bash(python3 -m pipeline.merger:*)",
       "Bash(python3 -m pipeline.publisher:*)",
       "Bash(python3 -m pipeline.rebuild:*)",
-      "Bash(python3 -m unittest:*)"
+      "Bash(python3 -m pipeline.discover:*)",
+      "Bash(python3 -m pipeline.relevance:*)",
+      "Bash(python3 -m unittest:*)",
+      "Bash(python3 scripts/lint_bundle.py:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/lint_bundle.py --pretooluse"
+          }
+        ]
+      }
     ]
   }
 }

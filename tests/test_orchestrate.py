@@ -100,6 +100,21 @@ def fake_match(calls=None):
     return _llm
 
 
+# Deterministic stand-in for the topic-choose seam: routes the known test
+# claims into distinct taxonomy topics so tests can assert concept counts
+# without any network access (routing itself stays real and deterministic
+# for these claims' keywords; only the ambiguous band is stubbed).
+CLAIM_TOPIC = {
+    CLAIMS[0]["claim"]: "programmatic-and-dsp",
+    CLAIMS[1]["claim"]: "api-access-and-onboarding",
+    "New reporting endpoints were added this quarter.": "reporting-api",
+}
+
+
+def fake_choose(claim, candidates):
+    return CLAIM_TOPIC.get(claim, "amazon-ads-api-overview")
+
+
 class OrchestrateTestCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -120,7 +135,10 @@ class OrchestrateTestCase(unittest.TestCase):
             fetcher=fake_fetcher(pages),
             extract_llm=extract_llm or fake_extract(calls=extract_calls),
             classify_llm=fake_merge(calls=merge_calls),
-            match_llm=match_llm or fake_match(), now=now)
+            match_llm=match_llm or fake_match(),
+            route_llm=fake_choose,
+            gate_llm=lambda claim: True,
+            now=now)
 
     def knowledge_files(self):
         return sorted(p for p in self.knowledge.glob("**/*") if p.is_file())
@@ -140,7 +158,7 @@ class SequencingTests(OrchestrateTestCase):
         self.assertEqual(entry["extract"]["claim_count"], 2)
         self.assertEqual(entry["adapter"]["fact_count"], 2)
         self.assertEqual(report["stages_executed"],
-                         ["fetch", "extract", "adapter", "validator",
+                         ["fetch", "extract", "gate", "adapter", "validator",
                           "merger", "publisher"])
         self.assertEqual(report["facts"]["valid"], 2)
         self.assertEqual(report["merge"]["output_concepts"], 2)
@@ -250,7 +268,8 @@ class SequencingTests(OrchestrateTestCase):
                 claims_path=self.claims, knowledge_dir=None,
                 fetcher=fake_fetcher({URL: MD}),
                 extract_llm=fake_extract(), classify_llm=fake_merge(),
-                match_llm=fake_match(), now=NOW)
+                match_llm=fake_match(), route_llm=fake_choose,
+                gate_llm=lambda claim: True, now=NOW)
         self.assertEqual(report["publish"]["published"], 2)
         self.assertEqual(len(self.knowledge_files()), 4)  # 2 docs + INDEX + CHANGELOG
 
@@ -406,7 +425,10 @@ class CliTests(OrchestrateTestCase):
              patch("pipeline.orchestrate.claude_cli_extract", fake_extract()), \
              patch("pipeline.orchestrate.claude_cli_classify", fake_merge()), \
              patch("pipeline.concepts.claude_cli_concept_match",
-                   fake_match()):
+                   fake_match()), \
+             patch("pipeline.topics.claude_cli_choose_topic", fake_choose), \
+             patch("pipeline.orchestrate.claude_cli_gate",
+                   lambda claim: True):
             out = io.StringIO()
             with redirect_stdout(out):
                 code = main(["--phrase",
@@ -421,6 +443,65 @@ class CliTests(OrchestrateTestCase):
         with self.assertRaises(SystemExit) as ctx:
             main(["--phrase", "ingest, update the bundle"])
         self.assertEqual(ctx.exception.code, 2)
+
+    def test_main_discover_injects_candidates_and_reports_them(self):
+        """--discover runs the discovery stage first: its candidates are
+        ingested after the seeds and its report leads the JSON. Stubbed —
+        no network, no cache reads."""
+        found = "https://advertising.amazon.com/API/docs/en-us/new-page"
+
+        def fake_discover(seed_urls, **kwargs):
+            return {"candidates": [found], "seeds_scanned": list(seed_urls),
+                    "search_used": False,
+                    "skipped": {"already_in_state": 0, "out_of_scope": 0},
+                    "cap": 10}
+
+        pages = {URL: MD, found: MD}
+        with patch("pipeline.orchestrate.DEFAULT_STATE_PATH", self.state), \
+             patch("pipeline.orchestrate.DEFAULT_CACHE_PATH", self.cache), \
+             patch("pipeline.orchestrate.DEFAULT_CLAIMS_PATH", self.claims), \
+             patch("pipeline.orchestrate.DEFAULT_KNOWLEDGE_PATH",
+                   self.knowledge), \
+             patch("pipeline.orchestrate.fetch_many",
+                   fake_fetcher(pages)), \
+             patch("pipeline.orchestrate.claude_cli_extract", fake_extract()), \
+             patch("pipeline.orchestrate.claude_cli_classify", fake_merge()), \
+             patch("pipeline.orchestrate.claude_cli_gate",
+                   lambda claim: True), \
+             patch("pipeline.concepts.claude_cli_concept_match",
+                   fake_match()), \
+             patch("pipeline.topics.claude_cli_choose_topic", fake_choose), \
+             patch("pipeline.discover.discover", fake_discover):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main(["--discover", URL])
+        self.assertEqual(code, 0)
+        report = json.loads(out.getvalue())
+        self.assertEqual(report["discover"]["candidates"], [found])
+        self.assertEqual([e["url"] for e in report["urls"]],
+                         [URL, found])  # seeds first, then candidates
+        self.assertTrue(report["knowledge_bundle_modified"])
+
+    def test_main_without_discover_has_no_discover_section(self):
+        with patch("pipeline.orchestrate.DEFAULT_STATE_PATH", self.state), \
+             patch("pipeline.orchestrate.DEFAULT_CACHE_PATH", self.cache), \
+             patch("pipeline.orchestrate.DEFAULT_CLAIMS_PATH", self.claims), \
+             patch("pipeline.orchestrate.DEFAULT_KNOWLEDGE_PATH",
+                   self.knowledge), \
+             patch("pipeline.orchestrate.fetch_many",
+                   fake_fetcher({URL: MD})), \
+             patch("pipeline.orchestrate.claude_cli_extract", fake_extract()), \
+             patch("pipeline.orchestrate.claude_cli_classify", fake_merge()), \
+             patch("pipeline.orchestrate.claude_cli_gate",
+                   lambda claim: True), \
+             patch("pipeline.concepts.claude_cli_concept_match",
+                   fake_match()), \
+             patch("pipeline.topics.claude_cli_choose_topic", fake_choose):
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main([URL])
+        self.assertEqual(code, 0)
+        self.assertNotIn("discover", json.loads(out.getvalue()))
 
 
 if __name__ == "__main__":

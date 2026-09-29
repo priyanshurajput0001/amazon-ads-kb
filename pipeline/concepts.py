@@ -16,7 +16,13 @@ The layer has three jobs:
 
 2. MATCHING (deterministic-first, LLM only where needed):
       jaccard(new fact, concept material) >= AUTO_SAME   -> same concept
-      jaccard >= CANDIDATE_MIN                            -> LLM decides
+      jaccard >= CANDIDATE_MIN                            -> LLM decides,
+                                     asked TWICE on 'no': first with a
+                                     MATCH_PREVIEW-claim preview, then with
+                                     the concept's FULL fact list; only two
+                                     'no' answers reject the candidate —
+                                     one 'no' can never mint a duplicate
+                                     document (review step 2)
       below CANDIDATE_MIN (and no hint agreement)         -> different concept
    Candidates are scored against the concept's title and each of its facts,
    so a concept is findable through any of its facts, not a summary.
@@ -57,11 +63,16 @@ import sys
 from pathlib import Path
 
 from pipeline import okf
+from pipeline import topics as topics_mod
 from pipeline.validator import (  # single source of truth for token rules
     AGREE_MIN,
+    MATCH_STOPWORDS,
     NEGATION_TOKENS,
     NUMBER_RE,
+    STOPWORDS,
     TOKEN_RE,
+    canonical_tokens,  # re-exported here since 2026-09-30; shared with topics
+    stem,
 )
 
 logger = logging.getLogger("pipeline.concepts")
@@ -75,9 +86,14 @@ CONCEPT_DOC_TYPE = "concept"
 # comparison, and a wider candidate band is what lets a changed VALUE
 # (MIT-0 -> Apache-2.0) reach the LLM seam instead of silently starting a
 # new concept.
-AUTO_SAME = AGREE_MIN   # >= 0.8: same concept, deterministic
+AUTO_SAME = AGREE_MIN   # >= 0.8: same concept, deterministic (the documented
+                        # cutoff above which a reworded fact merges with NO
+                        # LLM call — a wrong seam answer cannot split it)
 CANDIDATE_MIN = 0.30    # >= 0.30: candidate; the LLM seam decides
 HINT_TOKEN_MIN = 0.5  # topic-hint token overlap that also creates a candidate
+MATCH_PREVIEW = 5     # claims shown to the seam on its FIRST ask for a
+                      # candidate; the retry after a 'no' shows the FULL
+                      # fact list, so a late-fact paraphrase is still found
 
 # Words so generic in this corpus that sharing only them means nothing.
 GENERIC_TOKENS = frozenset({
@@ -86,20 +102,8 @@ GENERIC_TOKENS = frozenset({
 })
 
 # Words uppercased in generated titles (deterministic acronym handling).
-ACRONYMS = frozenset({"api", "mcp", "rss", "sdk", "aws", "dsp", "http", "https"})
-
-STOPWORDS = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "in", "on", "at", "to", "of", "for", "with", "and", "or", "by", "as",
-    "from", "that", "this", "these", "those", "it", "its", "their", "can",
-    "will", "shall", "may", "might", "has", "have", "had", "do", "does",
-    "did", "not", "no", "nor", "so", "such", "than", "then", "there",
-    "here", "when", "while", "who", "whom", "whose", "which", "what",
-})
-
-# Matching tokens keep negations: "X" vs "not X" must stay distinguishable,
-# so the words that flip meaning are deliberately NOT stopworded away.
-MATCH_STOPWORDS = STOPWORDS - NEGATION_TOKENS
+ACRONYMS = frozenset({"api", "mcp", "rss", "sdk", "aws", "dsp", "http", "https",
+                      "lwa", "amc", "gtm"})
 
 SLUG_WORD_RE = re.compile(r"[a-z0-9]+")
 SLUG_MAX = 64
@@ -126,30 +130,12 @@ class ConceptError(ValueError):
 
 
 # ---------------------------------------------------------------------------
-# Canonicalization helpers
+# Canonicalization helpers (token rules live in pipeline/validator.py —
+# the single source of truth — and are re-exported above for compatibility)
 # ---------------------------------------------------------------------------
 
-def _stem(word: str) -> str:
-    """Light deterministic stemming so reworded claims land on the same
-    tokens ('supports'/'supported'/'support' -> 'support'). Crude on purpose:
-    exact, cheap, no exceptions; anything it misses reaches the LLM band."""
-    if len(word) > 4 and word.endswith("ing"):
-        word = word[:-3]
-    elif len(word) > 4 and word.endswith("ed"):
-        word = word[:-2]
-    elif len(word) > 3 and word.endswith("s") \
-            and not word.endswith(("ss", "us", "is")):
-        word = word[:-1]
-    if len(word) > 4 and word.endswith("e"):
-        word = word[:-1]
-    return word
-
-
-def canonical_tokens(text: str) -> frozenset[str]:
-    """Lowercase stemmed content words: stopwords dropped (negations kept),
-    numbers kept."""
-    return frozenset(_stem(t) for t in TOKEN_RE.findall(text.lower())
-                     if t not in MATCH_STOPWORDS)
+# Backwards-compatible alias: internal callers used the private name.
+_stem = stem
 
 
 def number_tokens(tokens: frozenset[str]) -> frozenset[str]:
@@ -159,7 +145,7 @@ def number_tokens(tokens: frozenset[str]) -> frozenset[str]:
 def hint_tokens(hint: object) -> frozenset[str]:
     if not isinstance(hint, str):
         return frozenset()
-    return frozenset(_stem(w) for w in SLUG_WORD_RE.findall(hint.lower())
+    return frozenset(stem(w) for w in SLUG_WORD_RE.findall(hint.lower())
                      if w not in MATCH_STOPWORDS)
 
 
@@ -242,7 +228,9 @@ def claude_cli_concept_match(new_claim: str, title: str,
     """LLM seam: one-shot headless Claude call; True = same concept."""
     if shutil.which("claude") is None:
         raise ConceptError("no LLM backend available (claude CLI not found)")
-    claims = "\n".join(f"- {c}" for c in existing_claims[:10]) or "- (none)"
+    # The full claim list is passed through uncut: the retry after a 'no'
+    # deliberately shows the seam EVERY fact of the concept (review step 2).
+    claims = "\n".join(f"- {c}" for c in existing_claims) or "- (none)"
     prompt = CONCEPT_MATCH_PROMPT.format(
         new_claim=new_claim, title=title, existing_claims=claims)
     try:
@@ -301,18 +289,47 @@ def _best_overlap(fact_tokens: frozenset[str], fact_hint: frozenset[str],
     return best
 
 
+def _ask_match(match_llm, new_claim: str, concept: dict, *, full: bool):
+    """One seam call. First ask: title + first MATCH_PREVIEW claims. Retry:
+    the concept's FULL fact list — the paraphrase evidence may live in a late
+    fact the preview never showed. Returns the bool answer or None on seam
+    failure (callers treat failure as 'not this concept', never a guess)."""
+    claims = [f["content"] for f in concept.get("facts", [])]
+    if not full:
+        claims = claims[:MATCH_PREVIEW]
+    try:
+        return bool(match_llm(new_claim, concept.get("title") or "", claims))
+    except ConceptError as exc:
+        logger.warning("concept match seam failed for %r vs %s (%s); "
+                       "treating as different", new_claim[:60],
+                       concept.get("id"), exc)
+        return None
+
+
 def assign_concepts(
     facts: list[dict],
     existing: dict[str, dict],
     match_llm=claude_cli_concept_match,
+    route=None,
 ) -> tuple[list[dict], dict[str, str]]:
     """Annotate each fact with `concept_id` (existing doc id or a new one).
 
-    Deterministic-first: exact token-set agreement (AUTO_SAME) adopts an
-    existing concept with no LLM call; below CANDIDATE_MIN a fact cannot
-    belong to any existing concept. In between, the LLM seam decides —
-    with candidates visited in a fixed (best-overlap, id) order so runs are
-    reproducible for identical LLM answers.
+    TOPIC ROUTING FIRST (review step 3): when a `route` callable is given
+    (fact -> taxonomy topic slug, or None), every routable fact takes the
+    topic's slug as its concept id — deterministically adopting the existing
+    document of that name when one exists. Slugs come from the taxonomy,
+    never from fact wording, so a reworded extraction updates the same
+    document. Facts the router cannot place fall through to the legacy
+    matcher below.
+
+    Legacy matching (deterministic-first): exact token-set agreement
+    (AUTO_SAME) adopts an existing concept with no LLM call; below
+    CANDIDATE_MIN a fact cannot belong to any existing concept. In between,
+    the LLM seam decides — but it must answer 'no' TWICE (preview ask, then
+    a full-fact-list ask) before a candidate is rejected, so a single wrong
+    'no' on a paraphrase can never mint a duplicate document. Candidates are
+    visited in a fixed (best-overlap, id) order so runs are reproducible for
+    identical answers.
 
     Returns (facts, new_concepts) where new_concepts maps new id -> title.
     Facts are copied, never mutated.
@@ -320,8 +337,26 @@ def assign_concepts(
     facts = [dict(f) for f in facts]
     new_concepts: dict[str, str] = {}
 
-    # --- Pass 1: match facts against existing concepts (stable ids win) ---
+    # --- Pass 0: topic routing — the identity layer (taxonomy slugs) ---
+    if route is not None:
+        valid_slugs = {t.slug for t in topics_mod.TOPICS}
+        for fact in facts:
+            slug = route(fact)
+            if slug is None:
+                continue
+            if slug not in valid_slugs:
+                logger.warning("router returned unknown topic %r; "
+                               "fact falls back to matching", slug)
+                continue
+            fact["concept_id"] = slug
+            if slug not in existing:
+                new_concepts.setdefault(
+                    slug, topics_mod.TOPIC_BY_SLUG[slug].title)
+
+    # --- Pass 1: match UNROUTED facts against existing concepts ---
     for fact in facts:
+        if "concept_id" in fact:
+            continue
         fact_tokens = canonical_tokens(fact["content"])
         fact_hint = hint_tokens(fact.get("topic_hint"))
         scored = sorted(
@@ -336,16 +371,14 @@ def assign_concepts(
                 if overlap < CANDIDATE_MIN:
                     break  # sorted descending; the rest cannot qualify
                 concept = existing[cid]
-                try:
-                    same = match_llm(
-                        fact["content"], concept.get("title") or "",
-                        [f["content"] for f in concept.get("facts", [])])
-                except ConceptError as exc:
-                    logger.warning("concept match failed for %r vs %s (%s); "
-                                   "treating as different", fact["content"][:60],
-                                   cid, exc)
-                    continue
-                if same:
+                same = _ask_match(match_llm, fact["content"], concept,
+                                  full=False)
+                if same is not True:
+                    # One 'no' proves nothing: re-ask with the FULL fact
+                    # list. Only two 'no's reject this candidate.
+                    same = _ask_match(match_llm, fact["content"], concept,
+                                      full=True)
+                if same is True:
                     assigned = cid
                     logger.debug("LLM matched %r -> concept %s",
                                  fact["content"][:60], cid)
@@ -577,6 +610,15 @@ def parse_body(text: str) -> tuple[list[dict], list[dict]]:
                     f"unexpected body line in {section}: {line!r}")
     flush()
     return facts, conflicts
+
+
+def related_link_targets(body: str) -> list[str]:
+    """Every `./<slug>.md` cross-link target in a rendered body, in order.
+    Used by the bundle lint to prove Related links resolve."""
+    targets = []
+    for token in re.findall(r"\]\((\./[a-z0-9-]+\.md)\)", body):
+        targets.append(token[2:-3])
+    return targets
 
 
 def load_bundle(knowledge_dir: str | Path) -> dict[str, dict]:

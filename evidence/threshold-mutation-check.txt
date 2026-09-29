@@ -1,0 +1,41 @@
+# AGREE_MIN / CONFLICT_MIN mutation proof (real run, 2026-09-30 01:52:05)
+# Procedure: change one constant by one step, run the threshold suite,
+# record the result, revert. All output below is from the actual commands.
+
+## MUTATION: AGREE_MIN  raise to 0.9
+
+FAILED (failures=3)
+   (reverted)
+
+## MUTATION: AGREE_MIN  lower to 0.7
+
+FAILED (failures=3)
+   (reverted)
+
+## MUTATION: CONFLICT_MIN  raise to 0.6
+
+FAILED (failures=3)
+   (reverted)
+
+## MUTATION: CONFLICT_MIN  lower to 0.4
+
+FAILED (failures=3)
+   (reverted)
+
+## After all reverts — full suite:
+(the FAILED line immediately below is a stale-bytecode artifact of mutating
+the same file four times within one filesystem timestamp window; clearing
+__pycache__ and re-running gives the true result, shown after it)
+Ran 351 tests in 1.770s
+
+FAILED (failures=5)
+
+$ find . -name "__pycache__" -type d -not -path "./.git/*" -exec rm -rf {} +
+$ python3 -m unittest discover -s tests
+Ran 351 tests in 1.582s
+
+OK
+
+## Constants in the final state:
+91:AGREE_MIN = 0.8
+92:CONFLICT_MIN = 0.5

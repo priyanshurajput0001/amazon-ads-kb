@@ -39,6 +39,18 @@ def llm_match_no(new_claim, title, existing_claims):
     return False
 
 
+def llm_choose(claim, candidates):
+    """Deterministic stand-in for the topic-choose seam: first candidate."""
+    return candidates[0][0]
+
+
+def llm_gate(claim):
+    """Deterministic stand-in for the relevance-gate seam: keep everything
+    (these fixtures contain no off-topic claims, so no gate behavior is
+    under test here — that is test_relevance.py's job)."""
+    return True
+
+
 class RebuildTestCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -60,7 +72,8 @@ class RebuildTestCase(unittest.TestCase):
         return rebuild_bundle(state_path=self.state, claims_dir=self.claims,
                               knowledge_dir=self.knowledge,
                               classify_llm=llm_complementary,
-                              match_llm=llm_match_no, now=NOW)
+                              match_llm=llm_match_no, choose_llm=llm_choose,
+                              gate_llm=llm_gate, now=NOW)
 
 
 class HappyPathTests(RebuildTestCase):
@@ -139,7 +152,8 @@ class HappyPathTests(RebuildTestCase):
         report = rebuild_bundle(state_path=self.state, claims_dir=self.claims,
                                knowledge_dir=self.knowledge,
                                classify_llm=dup_or_comp,
-                               match_llm=llm_match_no, now=NOW)
+                               match_llm=llm_match_no, choose_llm=llm_choose,
+                               gate_llm=llm_gate, now=NOW)
         self.assertEqual(report["concepts"], 1)
         bundle = load_bundle(self.knowledge)
         (cid, concept), = bundle.items()

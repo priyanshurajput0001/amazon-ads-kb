@@ -1,0 +1,14 @@
+# PreToolUse lint hook: real demonstration (2026-09-30 01:54:25)
+
+## 1. Full-bundle lint (the same script the hook wraps):
+$ python3 scripts/lint_bundle.py
+knowledge/ lint clean (/Users/priyanshurajput/amazon-ads-kb/knowledge)
+exit=0
+
+## 2. Hook mode — a VALID concept write is allowed (exit 0):
+$ exit = 0 
+
+## 3. Hook mode — a MALFORMED write is BLOCKED (exit 2):
+$ exit = 2
+lint hook: this write would leave knowledge/ invalid:
+  - broken.md: /var/folders/q4/8swbsqrn26d816ds0d96dwt40000gn/T/kb-lint-hook-usepnios/knowledge/broken.md: missing frontmatter (must start with '---')

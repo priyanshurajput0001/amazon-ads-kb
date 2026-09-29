@@ -10,32 +10,49 @@ running it twice must not duplicate content — only real changes should be
 applied.
 
 ## Pipeline
+0. **Discover** (optional first stage, `--discover`) — read links from the
+   cached pages of the seed URLs (plus a `tvly search` when
+   TAVILY_API_KEY is set), keep only in-scope hosts, drop URLs already in
+   fetch state, and hand the capped candidate list to Fetch. Without the
+   flag the run is exactly the user-provided URLs.
 1. **Fetch** — download each source, fingerprint it, detect change
    (new / changed / unchanged). Unchanged sources stop here; nothing
    downstream runs. A new hash is staged as *pending* and committed only
-   after publication succeeds, so a failed run is always retried.
+   after publication succeeds, so a failed run is always retried. HTML
+   pages convert to Markdown (stdlib html.parser) when they carry real
+   text; a JS shell keeps the honest `html` verdict and stops.
 2. **Extract** — pull discrete factual claims out of each source. Every claim
    must carry a source URL, a fetch timestamp, and a verbatim supporting
    quote.
-3. **Adapter** — deterministic reshaping of claims into Validator facts
+3. **Relevance gate** — drop claims that are not about Amazon Ads /
+   advertising APIs / seller advertising tooling: deterministic keyword
+   lists first, ONE Claude yes/no only for borderline claims (verdicts
+   cached in `state/gate_cache.json`), every drop logged with its reason
+   to `state/dropped.json`. Fail-open: a broken seam keeps the claim.
+4. **Adapter** — deterministic reshaping of claims into Validator facts
    (source typing, dates, stability signals).
-4. **Validate** — score each fact with fixed trust arithmetic; stamp it
+5. **Validate** — score each fact with fixed trust arithmetic; stamp it
    valid / valid_low_confidence / rejected. This scores the current batch
    only; comparison against the maintained bundle happens in Merge.
-5. **Merge** — fold new facts into CONCEPTS by matching them against the
-   existing knowledge documents (deterministic candidate filtering first,
-   the LLM seam only for ambiguous matches). One concept per topic: if N
-   sources describe the same concept, they contribute facts and sources to
-   ONE concept — never duplicate documents. Conflicts are resolved by
+6. **Merge** — every fact first routes to a fixed TOPIC from the taxonomy
+   (`pipeline/topics.py`): deterministic keyword-phrase routing, one
+   Claude topic choice only for ties. The topic slug IS the concept id —
+   never derived from claim wording. Within a topic, fact pairs are
+   classified (deterministic bands first; the LLM seam only for
+   undecided plausible pairs, capped per concept). One concept per topic:
+   if N sources describe the same topic, they contribute facts and
+   sources to ONE document — never duplicates. A topic over 12 facts
+   splits by its declared sub-topics. Conflicts are resolved by
    fixed precedence (official > newer > majority) with the losing value
    retained, dated, and attributed — never silently erased; complete ties
    keep both sides, stamped `unresolved_conflict`.
-6. **Publish** — write/update one OKF concept document per concept in
+7. **Publish** — write/update one OKF concept document per topic in
    `knowledge/`, update the index (`knowledge/INDEX.md`) and change log
    (`knowledge/CHANGELOG.md`) in the same atomic batch.
 
-The pipeline starts at Fetch with URLs the user provides; there is no
-automated source discovery.
+The pipeline starts with URLs the user provides (optionally extended by
+Discover). Automated discovery reads only what was already fetched — it
+never crawls.
 
 ## OKF document format
 Every document in `knowledge/` is plain markdown with YAML frontmatter:
@@ -85,22 +102,33 @@ source must update the same document, not create a new one).
   included (changed values become dated, attributed conflicts).
 
 ## Division of labor: code vs. Claude judgment
-- **Code (deterministic, testable)**: fetching pages/URLs, hashing content to
-  detect real changes, file I/O, OKF frontmatter validation, concept
-  candidate filtering, conflict precedence, generating the index and
-  changelog.
-- **Claude (fuzzy judgment, isolated behind three mockable seams)**:
-  extracting facts from raw text (`pipeline/extractor.py`), classifying
+- **Code (deterministic, testable)**: fetching pages/URLs, HTML→Markdown
+  conversion, hashing content to detect real changes, file I/O, OKF
+  frontmatter validation, relevance keyword lists, topic keyword-phrase
+  routing, concept candidate filtering, conflict precedence, generating
+  the index and changelog.
+- **Claude (fuzzy judgment, isolated behind five mockable seams)**:
+  extracting facts from raw text (`pipeline/extractor.py`), relevance
+  yes/no for borderline claims (`pipeline/relevance.py`), choosing a
+  topic for keyword-ambiguous claims (`pipeline/topics.py`), classifying
   fact-pair relationships (`pipeline/merger.py`), deciding ambiguous
   concept matches (`pipeline/concepts.py`). Claude never decides winners,
   scores, identities, or file writes.
 
-## Agents vs. stages
-This project defines NO runnable Claude Code agents (`.claude/agents/` is
-empty). The pipeline stages are Python modules under `pipeline/`, not
-agents; their Claude-facing parts are the three LLM seams listed above,
-each invoked as a one-shot `claude -p` subprocess and each fakeable in
-tests. Stage documentation lives in `.claude/skills/`.
+## Agents, skills and the lint hook
+- `.claude/agents/` defines three READ-ONLY judgment agents — `extractor`,
+  `merge-judge`, `topic-router` — whose JSON-only contracts match the seam
+  prompts. The Python stages pin them headlessly
+  (`claude -p --agent <name>`); the relevance-gate and concept-match
+  seams are plain one-shot prompts. Every seam is fakeable, so tests run
+  fully offline.
+- `.claude/skills/` holds loadable SKILL.md reference guides for each
+  stage plus the `ingest <url>, update the bundle` command definition.
+- `.claude/settings.json` registers a PreToolUse hook (Write|Edit) that
+  runs `scripts/lint_bundle.py --pretooluse`: a write into `knowledge/`
+  is applied to a copy of the bundle and blocked (exit 2) if the copy
+  fails the OKF/concept lint. Plain `python3 scripts/lint_bundle.py`
+  lints the whole bundle, INDEX consistency included.
 
 ## Hard requirements
 - No fact enters `knowledge/` without a traceable source URL.

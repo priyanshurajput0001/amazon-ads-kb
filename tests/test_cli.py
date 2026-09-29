@@ -131,7 +131,31 @@ class DirectContentTypeTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result.content_type, "markdown")
 
-    def test_html_page_still_labeled_html(self):
+    def test_xml_feed_converts_to_markdown(self):
+        from unittest.mock import MagicMock
+        rss = (b"<?xml version='1.0'?><rss><channel><title>Amazon Ads API "
+                b"Release Notes</title><item><title>v2 general "
+                b"availability</title><description>The reporting API v2 is "
+                b"now generally available with standardized metrics and "
+                b"export endpoints.</description></item></channel></rss>")
+        resp = MagicMock()
+        resp.__enter__.return_value = resp
+        resp.__exit__.return_value = False
+        resp.headers.get_content_charset.return_value = "utf-8"
+        resp.headers.get_content_type.return_value = "text/xml"
+        resp.read.return_value = rss
+        with patch("urllib.request.urlopen", return_value=resp):
+            result = pipeline_fetch._direct(
+                "https://cdn.example/rss/ad-api-rss.xml",
+                "2026-09-30T00:00:00+00:00")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.content_type, "markdown")
+        self.assertEqual(result.strategy, "direct-html")
+        self.assertIn("v2 general availability", result.content)
+
+    def test_html_shell_page_still_labeled_html(self):
+        # A JS shell converts to (almost) nothing: honest html verdict, the
+        # pipeline refuses to extract noise.
         with patch("urllib.request.urlopen",
                    return_value=self._fake_response(b"<html><body>x</body>",
                                                     "text/html")):
@@ -139,6 +163,30 @@ class DirectContentTypeTests(unittest.TestCase):
                                             "2026-09-29T00:00:00+00:00")
         self.assertIsNotNone(result)
         self.assertEqual(result.content_type, "html")
+        self.assertEqual(result.strategy, "direct")
+
+    def test_content_html_page_converts_to_markdown(self):
+        """Review step 6: an HTML page with real visible text is converted
+        with the stdlib converter instead of being refused at Fetch."""
+        page = (b"<html><body><h1>Release notes</h1>"
+                b"<p>The Amazon Ads API version 2 adds asynchronous report "
+                b"requests and deprecates the snapshots APIs in favor of "
+                b"export APIs.</p></body></html>")
+        with patch("urllib.request.urlopen",
+                   return_value=self._fake_response(page, "text/html")):
+            result = pipeline_fetch._direct(
+                "https://advertising.amazon.com/API/docs/en-us/info/"
+                "release-notes", "2026-09-29T00:00:00+00:00")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.content_type, "markdown")
+        self.assertEqual(result.strategy, "direct-html")
+        self.assertIn("# Release notes", result.content)
+        self.assertIn("asynchronous report requests", result.content)
+        # the sha fingerprints the CONVERTED content the pipeline will see
+        import hashlib
+        self.assertEqual(
+            result.sha256,
+            hashlib.sha256(result.content.encode()).hexdigest())
 
 
 if __name__ == "__main__":

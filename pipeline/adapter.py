@@ -233,8 +233,13 @@ def adapt_url(
     official_hosts: tuple[str, ...] = OFFICIAL_HOSTS,
     official_url_prefixes: tuple[str, ...] = OFFICIAL_URL_PREFIXES,
     cache_dir: str | Path | None = None,
+    claims_doc: dict | None = None,
 ) -> dict:
-    """Adapt one URL; returns {url, status, facts|error} like the other stages."""
+    """Adapt one URL; returns {url, status, facts|error} like the other stages.
+
+    `claims_doc` overrides the on-disk claims document: the orchestrator
+    passes the claims ALREADY filtered by the relevance gate (the raw
+    extraction stays untouched on disk as the record of the page)."""
     entry = states.get(url)
     if entry is None:
         return {"url": url, "status": "error",
@@ -243,16 +248,19 @@ def adapt_url(
     if not sha:
         return {"url": url, "status": "error",
                 "error": "no content hash in fetch state (never successfully fetched)"}
-    claims_file = Path(claims_dir) / f"{sha}.json"
-    if not claims_file.exists():
-        return {"url": url, "status": "error",
-                "error": (f"no claims extracted for current content version "
-                          f"({sha[:12]}...) — run the Extractor first")}
-    try:
-        doc = json.loads(claims_file.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        return {"url": url, "status": "error",
-                "error": f"corrupt claims file: {exc}"}
+    if claims_doc is None:
+        claims_file = Path(claims_dir) / f"{sha}.json"
+        if not claims_file.exists():
+            return {"url": url, "status": "error",
+                    "error": (f"no claims extracted for current content version "
+                              f"({sha[:12]}...) — run the Extractor first")}
+        try:
+            doc = json.loads(claims_file.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            return {"url": url, "status": "error",
+                    "error": f"corrupt claims file: {exc}"}
+    else:
+        doc = claims_doc
     if doc.get("status") != "ok" or not isinstance(doc.get("claims"), list):
         return {"url": url, "status": "error",
                 "error": f"claims doc for {sha[:12]}... is not a valid ok extraction"}

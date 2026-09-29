@@ -1,0 +1,37 @@
+# Discover stage: real run against the production state/cache (2026-09-30 01:52:40)
+# Reads only already-cached pages + fetch state. No TAVILY_API_KEY in this
+## shell, so the tvly search seam is skipped (search_used: false).
+
+$ python3 -m pipeline.discover https://advertising.amazon.com/API/docs/en-us/guides/overview --cap 5
+{
+  "candidates": [
+    "https://advertising.amazon.com/API/docs",
+    "https://advertising.amazon.com/API/docs/en-us/guides/postman",
+    "https://advertising.amazon.com/API/docs/en-us/guides/translations",
+    "https://advertising.amazon.com/API/docs/en-us/blog",
+    "https://advertising.amazon.com/API/docs/en-us/guides/reporting/v3/get-started"
+  ],
+  "seeds_scanned": [
+    "https://advertising.amazon.com/API/docs/en-us/guides/overview"
+  ],
+  "search_used": false,
+  "skipped": {
+    "already_in_state": 2,
+    "out_of_scope": 7
+  },
+  "cap": 5
+}
+
+$ python3 -m pipeline.discover https://github.com/amzn --cap 5
+{
+  "candidates": [],
+  "seeds_scanned": [
+    "https://github.com/amzn"
+  ],
+  "search_used": false,
+  "skipped": {
+    "already_in_state": 0,
+    "out_of_scope": 12
+  },
+  "cap": 5
+}

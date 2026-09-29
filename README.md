@@ -24,24 +24,37 @@ Main flow (what runs today):
 ```
 User ("ingest <url>, update the bundle")
         ↓
-Claude Orchestrator
+Claude Orchestrator (one command: python3 -m pipeline.orchestrate)
+        ↓
+Discover   — optional first stage (--discover): new candidate URLs from
+             the cached pages of the seeds; in-scope hosts only
         ↓
 Fetch      — download the page, fingerprint it, detect change
+             (HTML pages convert to Markdown when they carry real text)
         ↓
 Extract    — Claude lists the factual claims the page makes
+        ↓
+Relevance  — off-topic claims are dropped (keywords first; one Claude
+gate         call for borderline claims; drops logged to state/)
         ↓
 Adapter    — plain-code reshaping into Validator facts
         ↓
 Validate   — fixed trust rules: valid / uncertain / rejected
         ↓
-Merge      — new facts are matched against the EXISTING knowledge base
-             and folded into concepts; Claude classifies relationships,
-             rules resolve conflicts (losers kept, dated, attributed)
+Merge      — each fact routes to a fixed TOPIC (the concept identity);
+             within a topic Claude classifies pair relationships, rules
+             resolve conflicts (losers kept, dated, attributed)
         ↓
 Publish    — write readable concept documents, INDEX, and CHANGELOG
         ↓
 Knowledge Base (the knowledge/ folder)
 ```
+
+The knowledge base is organized as ~15 TOPIC concepts (see
+`pipeline/topics.py` for the taxonomy): one document per topic — e.g.
+`api-access-and-onboarding.md`, `reporting-api.md`,
+`github-repos-and-sdks.md` — each holding every validated fact, with full
+per-fact provenance.
 
 ## The Most Important Design Decision
 
@@ -54,14 +67,16 @@ the work accordingly:
 
 | Part                             | Who handles it | Why                    |
 | -------------------------------- | -------------- | ---------------------- |
-| Fetching                         | Python         | predictable            |
+| Fetching + HTML conversion       | Python         | predictable            |
 | Hash/change detection            | Python         | exact                  |
-| Claim extraction                 | Claude         | language understanding |
+| Claim extraction                 | Claude (agent: extractor) | language understanding |
+| Relevance filtering              | Python keywords, then Claude for borderline claims | scope promise |
 | Claim transformation             | Python         | predictable            |
 | Validation                       | Python         | fixed rules            |
+| Topic routing                    | Python keywords, then Claude for ties | stable identity |
 | Concept candidate filtering      | Python         | cheap, deterministic   |
-| Ambiguous concept matches        | Claude         | semantic judgment      |
-| Fact relationship classification | Claude         | semantic judgment      |
+| Ambiguous concept matches        | Claude (asked twice) | semantic judgment |
+| Fact relationship classification | Claude (agent: merge-judge) | semantic judgment |
 | Merge policy & conflict winners  | Python         | controlled rules       |
 | Publishing                       | Python         | exact files/state      |
 
@@ -99,10 +114,12 @@ Install these first, from a fresh clone of this repository:
    ```
 
 4. **Tavily CLI** (`tvly`) + API key — web search/extraction used by
-   Fetch. Install the CLI (see https://tavily.com for the package and your
-   key) and export your key in your shell profile:
+   Fetch and (optionally) Discover. It is the `tavily-cli` package on
+   PyPI; installed here with pipx (`tvly --version` reports
+   `tavily-cli 0.1.8`):
 
    ```bash
+   pipx install tavily-cli                 # installs the tvly command
    export TAVILY_API_KEY="your-key-here"   # never commit a real key
    tvly --version
    ```
@@ -182,43 +199,47 @@ as a dated, attributed conflict entry.
 
 The `knowledge/` folder is the finished product:
 
-* one readable Markdown file per CONCEPT (e.g. `api-access.md`,
-  `amazon-marketing-stream.md`), the file name being the concept's stable
-  identity
+* one readable Markdown file per TOPIC concept (e.g.
+  `api-access-and-onboarding.md`, `reporting-api.md`,
+  `github-repos-and-sdks.md`), the file name being the topic's stable
+  identity — never derived from a sentence
 * each concept holds the facts that describe it, word-for-word, each with
   its own provenance (sources, fetch dates, trust score, merge outcome)
 * `INDEX.md` — a table of contents listing every concept
 * `CHANGELOG.md` — a dated history of everything created or updated
 
-A small example:
+A small example (real shape of `knowledge/api-access-and-onboarding.md`):
 
 ```markdown
 ---
-id: api-access                          ← stable concept identity
-title: API Access
+id: api-access-and-onboarding           ← stable topic identity
+title: API Access and Onboarding
 type: concept                           ← required by the OKF format
 sources:
-  - https://advertising.amazon.com/...
+  - https://advertising.amazon.com/API/docs/en-us/guides/onboarding/overview
 confidence: high
 status: official
-last_checked: 2026-09-27
+last_checked: 2026-09-30
 ---
 
-# API Access
+# API Access and Onboarding
 
 ## Details
 
 ### Facts
 
-- Application approval may take 1 business day.
-  - confidence_score: 0.75
+- Amazon Ads API application approval may take up to 1 business day.
+  - confidence_score: 0.60
   - status: valid
-  - resolution: duplicate_merged
+  - resolution: single_source
   - first_seen: 2026-09-26
-  - sources: https://advertising.amazon.com/... (official, fetched 2026-09-27T...)
+  - sources: https://advertising.amazon.com/... (official, fetched 2026-09-26T...)
 
 ## Sources
-- https://advertising.amazon.com/... — official, fetched ... (confirmed 1 fact)
+- https://advertising.amazon.com/... — official, fetched ... (confirmed N facts)
+
+## Related
+- [Amazon Ads API Overview](./amazon-ads-api-overview.md)
 ```
 
 ## Project Structure
@@ -226,22 +247,32 @@ last_checked: 2026-09-27
 ```
 .
 ├── .claude/
-│   ├── skills/      — reference docs & instructions: stage guides + the
-│   │                  "ingest …, update the bundle" command definition
-│   └── settings.json— which commands Claude may run without asking
+│   ├── agents/      — the three read-only LLM-judgment agents the Python
+│   │                  stages invoke headlessly (extractor, merge-judge,
+│   │                  topic-router)
+│   ├── skills/      — loadable SKILL.md folders: stage reference guides
+│   │                  + the "ingest …, update the bundle" command
+│   └── settings.json— allowed commands + the PreToolUse lint hook over
+│                      knowledge/ (scripts/lint_bundle.py)
+├── docs/
+│   └── DESIGN.md    — architecture, trade-offs, limits, retrospectives
 ├── pipeline/        — the Python code for every stage (stdlib only)
-├── tests/           — automated checks that nothing broke
-├── knowledge/       — the finished knowledge base (concepts + INDEX + CHANGELOG)
-├── state/           — the system's memory: fingerprints, cached pages, claims
+├── scripts/
+│   └── lint_bundle.py — bundle lint (also the PreToolUse hook)
+├── tests/           — automated checks that nothing broke (offline)
+├── knowledge/       — the finished knowledge base (~15 topic concepts,
+│                      INDEX, CHANGELOG)
+├── state/           — the system's memory: fingerprints, cached pages,
+│                      claims, gate verdicts, dropped-claim log
 ├── requirements.txt — documents that the pipeline needs no pip packages
 ├── CLAUDE.md        — the engineering rules of the project (for contributors)
 └── README.md        — this file
 ```
 
-Note that `.claude/skills/` holds *reference documentation* like the stage
-guides, plus the skill that powers the `ingest <url>, update the bundle`
-command. There are no runnable Claude Code agent definitions in this
-project — the pipeline is driven by that one skill and the Python driver.
+`.claude/skills/` holds the loadable stage guides and the ingest command;
+`.claude/agents/` holds the three judgment agents; the hook in
+`.claude/settings.json` blocks any Write/Edit that would leave `knowledge/`
+failing its lint.
 
 ## About CLAUDE.md
 
@@ -255,8 +286,9 @@ It is written as binding engineering rules, not suggestions. It covers:
 * **Purpose** — the mission: continuously discover, extract, validate,
   merge, and publish Amazon Ads knowledge into the `knowledge/` folder.
   It is a system meant to be re-run, not a one-shot scrape.
-* **The pipeline** — the six stages (Fetch, Extract, Adapter, Validate,
-  Merge, Publish) and how each stage hands structured data to the next.
+* **The pipeline** — the stages (Discover, Fetch, Extract, the relevance
+  gate, Adapter, Validate, Merge, Publish) and how each stage hands
+  structured data to the next.
 * **The document format** — exactly what every knowledge document must look
   like: Markdown with frontmatter carrying its stable concept `id`,
   `type`, `sources`, `confidence`, `status`, and `last_checked` date.
@@ -314,17 +346,21 @@ Recommended reading order:
 
 1. **README.md** (this file) — the big picture
 2. **CLAUDE.md** — the engineering ground rules and pipeline contract
-3. **.claude/skills/** — plain-English guides to what each part does
-4. **pipeline/** — the actual code, one file per stage
-5. **tests/** — what "correct" means for each stage
-6. **knowledge/** — the finished output, best read via INDEX.md
+3. **docs/DESIGN.md** — architecture, trade-offs, and the code-vs-Claude
+   line in depth
+4. **.claude/skills/** — plain-English guides to what each part does
+5. **pipeline/** — the actual code, one file per stage
+6. **tests/** — what "correct" means for each stage
+7. **knowledge/** — the finished output, best read via INDEX.md
 
 Each step adds detail to the same story told by the previous one.
 
 ## Important Terms
 
-* **Agent** — a helper with one specific job. This project defines no
-  runnable Claude Code agents; the pipeline stages are code.
+* **Agent** — a Claude Code agent definition (`.claude/agents/`): the
+  read-only judgment roles (extractor, merge-judge, topic-router) the
+  Python stages invoke headlessly. The pipeline stages themselves are
+  code; agents never run stages.
 * **LLM / Claude** — the AI model used to make semantic (fuzzy, judgment)
   decisions, like understanding what a page says.
 * **Hash** — a fingerprint of content. Same fingerprint means the content

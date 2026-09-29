@@ -25,7 +25,3 @@ last_checked: 2026-09-29
 ## Sources
 
 - https://advertising.amazon.com/API/docs/en-us/guides/overview — official, fetched 2026-09-27T10:33:46+00:00 (confirmed 1 fact)
-
-## Related
-
-- [Developer Guides Translations](./developer-guides-translations.md)

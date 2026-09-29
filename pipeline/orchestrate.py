@@ -28,6 +28,9 @@ through the same parameters used by every other stage.
 
 CLI: python3 -m pipeline.orchestrate URL [URL ...]
      python3 -m pipeline.orchestrate --phrase "ingest <url>, update the bundle"
+     python3 -m pipeline.orchestrate --discover URL [URL ...]   (optional
+     first stage: pipeline/discover.py finds new candidate URLs from the
+     seeds' cached pages; without the flag nothing changes)
 Prints one JSON report; exit 2 only for usage errors (no URLs given).
 """
 
@@ -42,6 +45,8 @@ import sys
 from pathlib import Path
 
 from pipeline import concepts as concepts_mod
+from pipeline import topics as topics_mod
+from pipeline import discover as discover_mod
 from pipeline.adapter import DEFAULT_CLAIMS_PATH, adapt_url
 from pipeline.extractor import DEFAULT_CLAIMS_PATH as EXTRACT_CLAIMS_PATH
 from pipeline.extractor import claude_cli_extract, extract_url
@@ -49,12 +54,15 @@ from pipeline.fetch import DEFAULT_CACHE_PATH, DEFAULT_STATE_PATH, fetch_many
 from pipeline.fetch import fetch_many_with_state
 from pipeline.merger import claude_cli_classify, merge_facts
 from pipeline.publisher import DEFAULT_KNOWLEDGE_PATH, publish_concepts
+from pipeline.relevance import DEFAULT_DROPPED_PATH, DEFAULT_GATE_CACHE_PATH
+from pipeline.relevance import claude_cli_gate, filter_claims
 from pipeline.state import commit_state, load_state
 from pipeline.validator import validate_facts
 
 logger = logging.getLogger("pipeline.orchestrate")
 
-ALL_STAGES = ("fetch", "extract", "adapter", "validator", "merger", "publisher")
+ALL_STAGES = ("fetch", "extract", "gate", "adapter", "validator",
+              "merger", "publisher")
 
 URL_RE = re.compile(r"https?://[^\s,\"'<>)]+")
 
@@ -85,8 +93,10 @@ def orchestrate(
     knowledge_dir: str | Path | None = None,
     fetcher=None,
     extract_llm=None,
+    gate_llm=None,
     classify_llm=None,
     match_llm=None,
+    route_llm=None,
     now: datetime.datetime | None = None,
 ) -> dict:
     """Run the pipeline for each URL. Returns the full report dict.
@@ -97,8 +107,16 @@ def orchestrate(
     urls = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
     fetcher = fetcher or fetch_many
     extract_llm = extract_llm or claude_cli_extract
+    gate_llm = gate_llm or claude_cli_gate
     classify_llm = classify_llm or claude_cli_classify
     match_llm = match_llm or concepts_mod.claude_cli_concept_match
+    route_llm = route_llm or topics_mod.claude_cli_choose_topic
+
+    def route(fact: dict) -> str | None:
+        slug, _ = topics_mod.route_fact(fact["content"],
+                                        fact.get("topic_hint"),
+                                        choose_llm=route_llm)
+        return slug
     if not urls:
         raise OrchestratorError("no URLs provided")
     now = now or datetime.datetime.now(datetime.UTC)
@@ -107,6 +125,11 @@ def orchestrate(
     cache_path = cache_path or DEFAULT_CACHE_PATH
     claims_path = claims_path or DEFAULT_CLAIMS_PATH
     knowledge_dir = knowledge_dir or DEFAULT_KNOWLEDGE_PATH
+    # The relevance gate's audit log and verdict cache live next to the
+    # fetch state (state/dropped.json, state/gate_cache.json by default).
+    state_dir = Path(state_path).parent
+    dropped_path = state_dir / "dropped.json"
+    gate_cache_path = state_dir / "gate_cache.json"
 
     # ---- Stage 1: Fetch (existing change detection decides everything) ----
     fetch_results = fetch_many_with_state(
@@ -116,6 +139,7 @@ def orchestrate(
 
     per_url: list[dict] = []
     extracted_urls: list[str] = []
+    extraction_paths: dict[str, str] = {}
     for result in fetch_results:
         url = result["url"]
         verdict = result.get("change", "error")
@@ -154,19 +178,38 @@ def orchestrate(
                            url, extraction.get("error"))
             continue
         extracted_urls.append(url)
+        if extraction.get("claims_path"):
+            extraction_paths[url] = extraction["claims_path"]
 
     report: dict = {"urls": per_url, "stages_executed": ["fetch"]}
     if extracted_urls:
-        report["stages_executed"].append("extract")
+        report["stages_executed"].extend(["extract", "gate"])
 
-    # ---- Stage 3: Adapter (only for successfully extracted URLs) ----
+    # ---- Stage 3: Relevance gate + Adapter (extracted URLs only) ----
     facts: list[dict] = []
     adapted_urls: list[str] = []
     for entry in per_url:
         url = entry["url"]
         if url not in extracted_urls:
             continue
-        adapted = adapt_url(url, states, claims_path, cache_dir=cache_path)
+        # Gate between Extract and Adapter: off-topic claims never become
+        # facts. The raw claims file stays untouched on disk.
+        claims_doc = None
+        if extraction_paths.get(url):
+            try:
+                raw_doc = json.loads(
+                    Path(extraction_paths[url]).read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as exc:
+                entry.update(stopped_at="gate", error=f"unreadable claims: {exc}")
+                logger.warning("%s: claims unreadable — stopping this URL", url)
+                continue
+            kept, dropped = filter_claims(
+                raw_doc, llm=gate_llm, dropped_path=dropped_path,
+                cache_path=gate_cache_path, today=now.date().isoformat())
+            claims_doc = {**raw_doc, "claims": kept}
+            entry["gate"] = {"kept": len(kept), "dropped": len(dropped)}
+        adapted = adapt_url(url, states, claims_path, cache_dir=cache_path,
+                            claims_doc=claims_doc)
         entry["adapter"] = {"status": adapted["status"],
                             "fact_count": adapted.get("fact_count", 0)}
         if adapted["status"] == "ok":
@@ -202,12 +245,13 @@ def orchestrate(
 
     try:
         # The maintained bundle participates: concepts are matched against
-        # the existing documents (deterministic candidates, LLM only in the
-        # ambiguous band — the bundle is never loaded into the LLM whole).
+        # the existing documents (topic-routing identity first, then
+        # deterministic candidates, LLM only in the ambiguous band — the
+        # bundle is never loaded into the LLM whole).
         existing = concepts_mod.load_bundle(knowledge_dir)
         merged = merge_facts(validated, existing=existing,
                              classify_llm=classify_llm, match_llm=match_llm,
-                             today=now.date().isoformat())
+                             today=now.date().isoformat(), route=route)
     except Exception as exc:  # MergerError and friends
         report["stage_failed"] = {"stage": "merger", "error": str(exc)}
         report["knowledge_bundle_modified"] = False
@@ -243,19 +287,29 @@ def orchestrate(
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: python3 -m pipeline.orchestrate URL [URL ...]
     or:               python3 -m pipeline.orchestrate --phrase "..."
+    optional first stage: --discover (new candidate URLs are read from the
+                          seeds' cached pages — and a tvly search when
+                          TAVILY_API_KEY is set — then ingested after them)
 
     Prints one JSON report covering every URL. Exit 0 even when individual
     URLs fail (their failures are data in the report); exit 2 only for usage
     errors. Headless-friendly: no prompts, one command, honest output.
+    Without --discover the behavior is exactly the pre-discovery pipeline.
     """
     parser = argparse.ArgumentParser(
-        description="Orchestrate fetch->extract->adapter->validator->merger->"
-                    "publisher for URL(s), stopping per URL on unchanged "
-                    "content or failure.")
+        description="Orchestrate discover?->fetch->extract->gate->adapter->"
+                    "validator->merger->publisher for URL(s), stopping per "
+                    "URL on unchanged content or failure.")
     parser.add_argument("urls", nargs="*", metavar="URL")
     parser.add_argument("--phrase", metavar="TEXT",
                         help='full user phrase, e.g. "ingest <url>, update '
                              'the bundle"; URLs are parsed out of it')
+    parser.add_argument("--discover", action="store_true",
+                        help="first read links from the seed URLs' cached "
+                             "pages (and a tvly search when TAVILY_API_KEY "
+                             "is set), then also ingest the new in-scope "
+                             "candidates, capped and de-duplicated against "
+                             "fetch state")
     args = parser.parse_args(argv)
 
     urls = args.urls
@@ -267,11 +321,23 @@ def main(argv: list[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")
+
+    discovery: dict | None = None
+    if args.discover:
+        try:
+            discovery = discover_mod.discover(urls)
+        except discover_mod.DiscoverError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+        urls = urls + [u for u in discovery["candidates"] if u not in urls]
+
     try:
         report = orchestrate(urls)
     except OrchestratorError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    if discovery is not None:
+        report = {"discover": discovery, **report}
     print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0
 

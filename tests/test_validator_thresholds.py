@@ -156,6 +156,40 @@ class SimilarityBandBoundaries(unittest.TestCase):
             self.pair("alpha beta", "alpha gamma"),
             "unrelated")
 
+    def test_just_below_050_is_unrelated(self):
+        # shared {alpha,beta,gamma}, union 7 = 3/7 = 0.4286 — the closest
+        # reachable value below CONFLICT_MIN. If CONFLICT_MIN were lowered to
+        # 0.42 or below, this becomes contradict and the suite fails.
+        self.assertEqual(
+            self.pair("alpha beta gamma delta",
+                      "alpha beta gamma epsilon zeta theta"),
+            "unrelated")
+
+    def test_just_above_050_is_contradict(self):
+        # shared 5, union 9 = 5/9 = 0.5556 — the closest reachable value
+        # above CONFLICT_MIN. If CONFLICT_MIN were raised to 0.56 or above,
+        # this becomes unrelated and the suite fails.
+        self.assertEqual(
+            self.pair("alpha beta gamma delta epsilon",
+                      "alpha beta gamma delta epsilon zeta eta theta iota"),
+            "contradict")
+
+    def test_just_above_080_is_agree(self):
+        # shared 6, union 7 = 6/7 = 0.857 — the closest reachable value above
+        # AGREE_MIN. If AGREE_MIN were raised to 0.86 or above, this becomes
+        # contradict and the suite fails.
+        self.assertEqual(
+            self.pair("alpha beta gamma delta epsilon zeta",
+                      "alpha beta gamma delta epsilon zeta eta"),
+            "agree")
+
+    def test_just_below_080_is_contradict(self):
+        # shared 5, union 7 = 5/7 = 0.714 — clearly inside the conflict band.
+        self.assertEqual(
+            self.pair("alpha beta gamma delta epsilon",
+                      "alpha beta gamma delta epsilon zeta eta"),
+            "contradict")
+
     def test_numeric_flip_in_band_is_contradict(self):
         # identical tokens except the value: sim 4/6, numbers {100} vs {500}
         self.assertEqual(
@@ -192,6 +226,34 @@ class ValidatorThresholdMutationGuards(unittest.TestCase):
                                    url="https://a.example/x",
                                    source_type="community", agree=2)])
         self.assertEqual(out[0]["status"], "rejected")
+
+    def test_similarity_bands_change_real_scoring(self):
+        """End-to-end pinning of AGREE_MIN/CONFLICT_MIN: a 6/7-overlap pair
+        (~0.857) MUST be agreement (both official facts corroborate each
+        other, raising the score), and a 5/9-overlap pair (~0.556) MUST be a
+        contradiction (official facts capped at valid_low_confidence). If
+        either band moves, these real decisions flip and the suite fails."""
+        agree_a = "alpha beta gamma delta epsilon zeta reporting works"
+        agree_b = "alpha beta gamma delta epsilon zeta eta reporting works"
+        out = validate_facts([
+            fact(agree_a, "https://a.example/x"),
+            fact(agree_b, "https://b.example/y"),
+        ])
+        # agreement across 2 URLs: 0.60 base + 0.15 corroboration = 0.75
+        self.assertEqual(out[0]["confidence_score"], 0.75)
+        self.assertEqual(out[0]["status"], "valid")
+
+        conflict_a = "alpha beta gamma delta epsilon kappa limit applies"
+        conflict_b = ("alpha beta gamma delta epsilon zeta eta theta iota "
+                      "limit applies")
+        out = validate_facts([
+            fact(conflict_a, "https://a.example/x"),
+            fact(conflict_b, "https://b.example/y"),
+        ])
+        # official cross-page contradiction: capped at valid_low_confidence
+        self.assertEqual(out[0]["status"], "valid_low_confidence")
+        self.assertIn("official sources materially contradict",
+                      out[0]["reason"])
 
 
 if __name__ == "__main__":

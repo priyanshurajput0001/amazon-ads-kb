@@ -96,6 +96,43 @@ NEGATION_TOKENS = frozenset(
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 NUMBER_RE = re.compile(r"^\d+(?:[.,]\d+)*$")
 
+# Matching stopwords (shared with the concept/topic layers — single source of
+# truth for token rules). Negations are deliberately KEPT in matching tokens:
+# "X" vs "not X" must stay distinguishable.
+STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
+    "in", "on", "at", "to", "of", "for", "with", "and", "or", "by", "as",
+    "from", "that", "this", "these", "those", "it", "its", "their", "can",
+    "will", "shall", "may", "might", "has", "have", "had", "do", "does",
+    "did", "not", "no", "nor", "so", "such", "than", "then", "there",
+    "here", "when", "while", "who", "whom", "whose", "which", "what",
+})
+MATCH_STOPWORDS = STOPWORDS - NEGATION_TOKENS
+
+
+def stem(word: str) -> str:
+    """Light deterministic stemming so reworded claims land on the same
+    tokens ('supports'/'supported'/'support' -> 'support'). Crude on purpose:
+    exact, cheap, no exceptions; anything it misses reaches the LLM band."""
+    if len(word) > 4 and word.endswith("ing"):
+        word = word[:-3]
+    elif len(word) > 4 and word.endswith("ed"):
+        word = word[:-2]
+    elif len(word) > 3 and word.endswith("s") \
+            and not word.endswith(("ss", "us", "is")):
+        word = word[:-1]
+    if len(word) > 4 and word.endswith("e"):
+        word = word[:-1]
+    return word
+
+
+def canonical_tokens(text: str) -> frozenset[str]:
+    """Lowercase stemmed content words: stopwords dropped (negations kept),
+    numbers kept. THE shared matcher vocabulary for the Validator, the
+    concept layer, and the topic taxonomy."""
+    return frozenset(stem(t) for t in TOKEN_RE.findall(text.lower())
+                     if t not in MATCH_STOPWORDS)
+
 STATUS_VALID = "valid"
 STATUS_LOW = "valid_low_confidence"
 STATUS_REJECTED = "rejected"

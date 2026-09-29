@@ -26,6 +26,11 @@ Conflicts are never silently erased: the losing fact is RETAINED in the
 concept's conflicts list with its full provenance, the rule that demoted it,
 and the content that superseded it. A complete tie (authority, recency and
 majority all equal) keeps BOTH facts current, each stamped
+unresolved_conflict. Only TRUE same-attribute contradictions reach conflict
+resolution at all (review 1c): a deterministic conflict needs a numeric flip
+at >= 0.5 overlap or a negation flip on an otherwise identical claim, and
+the LLM seam is prompted that audience-split "for X / for Y" facts are
+complementary — so an audience split can no longer surface as a tie-stamped
 unresolved_conflict.
 
 Deterministic combination rules (the LLM never rewrites content):
@@ -55,6 +60,7 @@ import sys
 from pathlib import Path
 
 from pipeline import concepts
+from pipeline import topics as topics_mod
 from pipeline.concepts import (
     AUTO_SAME,
     GENERIC_TOKENS,
@@ -75,7 +81,15 @@ REQUIRED_FACT_KEYS = ("url", "content", "source_type", "status")
 LLM_TIMEOUT = 120  # seconds, one-shot claude call per pair
 
 # Within-concept deterministic bands (token-set Jaccard over stemmed tokens).
-FLIP_MIN = 0.5   # a negation/numeric flip at >= 0.5 overlap is a conflict
+FLIP_MIN = 0.5   # a numeric flip at >= 0.5 overlap is a conflict (a value
+                 # changed on the same attribute: MIT-0 -> Apache-2.0)
+NEG_FLIP_MIN = AUTO_SAME  # a NEGATION flip conflicts only when the claims are
+                 # otherwise the same claim (>= 0.8 overlap): "X" vs "not X".
+                 # Below that, differing content words mean the negation sits
+                 # inside a qualifier such as an audience phrase ("aimed at
+                 # advertisers that do not sell on Amazon") — an audience
+                 # split is COMPLEMENTARY, so the pair goes to the LLM seam
+                 # instead of straight to conflict resolution (review 1c).
 
 
 class LlmError(RuntimeError):
@@ -95,8 +109,18 @@ Compare the two claims below and answer EXACTLY one question: how are they relat
 
 Labels:
 - "duplicate"     : same underlying claim, different wording.
-- "conflicting"   : same subject/claim but contradictory values or information.
-- "complementary" : same subject but each contains different non-conflicting information.
+- "conflicting"   : same subject AND same attribute, but contradictory values
+                    (a number changed, a license changed, one says X where the
+                    other says not X about the very same thing).
+- "complementary" : same subject but each contains different non-conflicting
+                    information.
+
+Audience splits are COMPLEMENTARY, never conflicting: one guide/tool/limit
+"for X" (e.g. sellers or vendors) alongside a separate one "for Y" (e.g.
+advertisers that do not sell on Amazon) describes two different offerings for
+two different audiences — that is different information, not a contradiction.
+Only claims that could not both be true at the same time about the same
+attribute may be labeled conflicting.
 
 Rules:
 - Do NOT decide which claim wins.
@@ -111,14 +135,17 @@ CLAIM B ({url_b}): {content_b}
 
 
 def claude_cli_classify(fact_a: dict, fact_b: dict) -> str:
-    """LLM seam: one-shot headless Claude call answering only the label question."""
+    """LLM seam: one-shot headless Claude call answering only the label
+    question, pinned to the read-only merge-judge agent
+    (.claude/agents/merge-judge.md)."""
     if shutil.which("claude") is None:
         raise LlmError("no LLM backend available (claude CLI not found)")
     prompt = MERGER_PROMPT.format(url_a=fact_a["url"], content_a=fact_a["content"],
                                   url_b=fact_b["url"], content_b=fact_b["content"])
     try:
-        proc = subprocess.run(["claude", "-p", prompt], capture_output=True,
-                              text=True, timeout=LLM_TIMEOUT)
+        proc = subprocess.run(
+            ["claude", "-p", prompt, "--agent", "merge-judge"],
+            capture_output=True, text=True, timeout=LLM_TIMEOUT)
     except subprocess.TimeoutExpired:
         raise LlmError(f"LLM timed out after {LLM_TIMEOUT}s") from None
     if proc.returncode != 0:
@@ -186,8 +213,13 @@ def _check_contract(facts: object) -> None:
 def _classify_deterministic(a: frozenset[str], b: frozenset[str]) -> str | None:
     """duplicate | conflicting | None (undecided — maybe worth an LLM call).
 
-    Reuses the Validator's tripwires: a negation or numeric flip at >= 0.5
-    overlap is a conflict; >= 0.8 overlap is the same claim restated.
+    Reuses the Validator's tripwires, tightened (review 1c) so that only TRUE
+    same-attribute contradictions fire deterministically: a numeric flip at
+    >= FLIP_MIN overlap (a value changed), or a negation flip when the claims
+    are otherwise identical (>= NEG_FLIP_MIN). A negation inside a qualifier
+    at lower overlap ("for sellers" vs "for advertisers that do not sell")
+    is an audience split — complementary — and is left to the LLM seam.
+    >= AUTO_SAME overlap without a flip is the same claim restated.
     """
     sim = jaccard(a, b)
     if sim < FLIP_MIN:
@@ -195,7 +227,9 @@ def _classify_deterministic(a: frozenset[str], b: frozenset[str]) -> str | None:
     neg_a = {t for t in a if t in NEGATION_TOKENS}
     neg_b = {t for t in b if t in NEGATION_TOKENS}
     num_a, num_b = number_tokens(a), number_tokens(b)
-    if (neg_a != neg_b) or (num_a and num_b and num_a != num_b):
+    if num_a and num_b and num_a != num_b:
+        return "conflicting"
+    if neg_a != neg_b and sim >= NEG_FLIP_MIN:
         return "conflicting"
     if sim >= AUTO_SAME:
         return "duplicate"
@@ -219,21 +253,55 @@ def _member_tokens(member: dict) -> frozenset[str]:
     return canonical_tokens(member["content"])
 
 
+# Per-concept ceiling on pairwise LLM classification calls. Beyond it,
+# undecided pairs simply coexist (logged). Without a cap, an N-fact topic
+# concept costs O(N^2) one-shot claude calls — the 2026-09-30 migration
+# stalled for >20 minutes inside the ~30-fact github topic. Pair order is
+# deterministic (index order), so capped runs are reproducible.
+PAIR_LLM_CAP = 60
+
+
+def _member_extraction(member: dict) -> tuple[str, object]:
+    """(url, sha256) of the extraction a member fact came from. Facts from
+    ONE extraction (same URL, same content version) were emitted by the
+    Extractor as DISTINCT claims of one page — they are complementary by
+    construction and are never re-compared against each other. Only pairs
+    from DIFFERENT extractions can be duplicates (a reworded re-extraction)
+    or conflicts (a changed value)."""
+    url = member["sources"][0]["url"] if member.get("sources") else ""
+    return url, member.get("sha256")
+
+
 def _pair_labels(members: list[dict], new_flags: list[bool],
                  llm) -> dict[tuple[int, int], str]:
     """Classify pairs that involve at least one NEW fact. Deterministic bands
-    first; the LLM seam only for undecided, plausible pairs. Failed pairs are
-    reported and left out — both facts then stay separate."""
+    first; the LLM seam only for undecided, plausible pairs, under two hard
+    bounds: pairs from the same extraction are skipped entirely, and at most
+    PAIR_LLM_CAP seam calls are made per concept (excess undecided pairs
+    coexist). Failed pairs are reported and left out — both facts then stay
+    separate."""
     tokens = [_member_tokens(m) for m in members]
+    extractions = [_member_extraction(m) for m in members]
     labels: dict[tuple[int, int], str] = {}
+    llm_calls = 0
     for i in range(len(members)):
         for j in range(i + 1, len(members)):
             if not (new_flags[i] or new_flags[j]):
                 continue  # existing-existing: settled in an earlier run
+            if extractions[i] == extractions[j] and extractions[i][1]:
+                continue  # same extraction: distinct-by-construction claims
             verdict = _classify_deterministic(tokens[i], tokens[j])
             if verdict is None:
                 if not _needs_llm(tokens[i], tokens[j]):
                     continue  # coexist; no relationship to act on
+                if llm_calls >= PAIR_LLM_CAP:
+                    logger.warning(
+                        "pairwise LLM cap (%d) reached in this concept; "
+                        "%r <-> %r left to coexist", PAIR_LLM_CAP,
+                        members[i]["content"][:50],
+                        members[j]["content"][:50])
+                    continue
+                llm_calls += 1
                 try:
                     verdict = llm(
                         {"url": members[i]["sources"][0]["url"],
@@ -400,6 +468,9 @@ def _new_member(fact: dict, today: str) -> dict:
                      "source_type": fact["source_type"]}],
         "community_agree_count": fact.get("community_agree_count", 0),
         "stable": fact.get("is_changed") == "N",
+        # provenance of the extraction this fact came from: pairs from ONE
+        # extraction are distinct-by-construction and skip classification
+        "sha256": fact.get("sha256"),
         "is_new": True,
     }
 
@@ -499,8 +570,9 @@ def _merge_concept(new_facts: list[dict], existing: dict | None, today: str,
 
     return {
         "id": (existing or {}).get("id") or new_facts[0]["concept_id"],
-        "title": (existing or {}).get("title")
-        or humanize(new_facts[0]["concept_id"]),
+        "title": (existing or {}).get("title") \
+            or topics_mod.topic_title(new_facts[0]["concept_id"]) \
+            or humanize(new_facts[0]["concept_id"]),
         "type": "concept",
         "facts": facts,
         "conflicts": ((existing or {}).get("conflicts", [])
@@ -518,8 +590,16 @@ def merge_facts(
     classify_llm=claude_cli_classify,
     match_llm=concepts.claude_cli_concept_match,
     today: str | None = None,
+    route=None,
 ) -> dict:
     """Merge Validator output into concepts, matched against the live bundle.
+
+    `route` (optional, fact -> taxonomy topic slug) turns on topic-level
+    concept identity: every routable fact joins the concept named by its
+    topic — the stable id IS the topic slug, so reworded extractions and
+    changed values update one document per topic. The catch-all cap
+    (topics.MAX_TOPIC_FACTS) splits an over-grown topic by its declared
+    sub-topics after the merge.
 
     Returns {"concepts": [...], "rejected": [...]}: concepts carry the full
     merged state for the Publisher; rejected facts pass through unchanged.
@@ -532,7 +612,7 @@ def merge_facts(
     rejected = [dict(f) for f in facts if f["status"] == REJECTED]
 
     assigned, new_concepts = concepts.assign_concepts(
-        participating, existing, match_llm=match_llm)
+        participating, existing, match_llm=match_llm, route=route)
 
     grouped: dict[str, list[dict]] = {}
     for fact in assigned:
@@ -542,10 +622,12 @@ def merge_facts(
     for cid in sorted(grouped):
         merged = _merge_concept(grouped[cid], existing.get(cid), today,
                                 classify_llm)
-        concepts.check_concept(merged)
-        merged_concepts.append(merged)
-        logger.info("concept %s: %d facts, %d conflicts",
-                    cid, len(merged["facts"]), len(merged["conflicts"]))
+        for piece in topics_mod.split_over_cap(merged):
+            concepts.check_concept(piece)
+            merged_concepts.append(piece)
+            logger.info("concept %s: %d facts, %d conflicts",
+                        piece["id"], len(piece["facts"]),
+                        len(piece["conflicts"]))
 
     return {"concepts": merged_concepts, "rejected": rejected}
 
@@ -555,22 +637,28 @@ def merge_facts(
 # --------------------------------------------------------------------------
 
 def main(argv: list[str] | None = None, classify_llm=claude_cli_classify,
-         match_llm=concepts.claude_cli_concept_match) -> int:
+         match_llm=concepts.claude_cli_concept_match,
+         choose_llm=topics_mod.claude_cli_choose_topic) -> int:
     """CLI entry point: python3 -m pipeline.merger FACTS_JSON
 
     FACTS_JSON is a file containing a JSON array of Validator-output facts
     (or {"facts": [...]}) or "-" to read stdin. The existing bundle is read
     from knowledge/ (override with --knowledge-dir). Prints the merged
     concept array to stdout. Exit 0 on success; 2 on invalid input.
+    Topic routing is ON by default (--no-topic-routing disables it).
     """
     parser = argparse.ArgumentParser(
         description="Merge validated facts into concepts (LLM classifies "
-                    "pairs and concept matches; Python resolves and combines).")
+                    "pairs, concept matches and topic choices; Python "
+                    "resolves and combines).")
     parser.add_argument("facts", metavar="FACTS_JSON",
                         help="JSON array of validated facts, or '-' for stdin")
     parser.add_argument("--knowledge-dir", default=None,
                         help="existing bundle to merge into "
                              "(default: the repository knowledge/)")
+    parser.add_argument("--no-topic-routing", action="store_true",
+                        help="disable taxonomy topic routing (legacy "
+                             "overlap matching only)")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="also log pair labels and merge details")
     args = parser.parse_args(argv)
@@ -591,9 +679,17 @@ def main(argv: list[str] | None = None, classify_llm=claude_cli_classify,
     kdir = Path(args.knowledge_dir) if args.knowledge_dir else \
         Path(__file__).resolve().parents[1] / "knowledge"
     existing = concepts.load_bundle(kdir)
+
+    def _route(fact: dict) -> str | None:
+        slug, _ = topics_mod.route_fact(fact["content"],
+                                        fact.get("topic_hint"),
+                                        choose_llm=choose_llm)
+        return slug
+
     try:
         merged = merge_facts(data, existing=existing, classify_llm=classify_llm,
-                             match_llm=match_llm)
+                             match_llm=match_llm,
+                             route=None if args.no_topic_routing else _route)
     except (MergerError, concepts.ConceptError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
