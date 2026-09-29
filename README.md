@@ -43,19 +43,6 @@ Publish    — write readable concept documents, INDEX, and CHANGELOG
 Knowledge Base (the knowledge/ folder)
 ```
 
-Optional path (available, **not** wired into the automatic flow):
-
-```
-User gives a topic
-        ↓
-Scout (finds candidate source URLs)
-        ↓
-Candidate sources (the user then passes them to the command above)
-```
-
-Scout is available for source discovery, but the current production flow
-starts when the user provides URLs.
-
 ## The Most Important Design Decision
 
 **Let code handle rules. Let Claude handle ambiguity.**
@@ -111,10 +98,9 @@ Install these first, from a fresh clone of this repository:
    claude --version
    ```
 
-4. **Tavily CLI** (`tvly`) + API key — web search/extraction used by Fetch
-   and by the optional Scout agent. Install the CLI (see
-   https://tavily.com for the package and your key) and export your key in
-   your shell profile:
+4. **Tavily CLI** (`tvly`) + API key — web search/extraction used by
+   Fetch. Install the CLI (see https://tavily.com for the package and your
+   key) and export your key in your shell profile:
 
    ```bash
    export TAVILY_API_KEY="your-key-here"   # never commit a real key
@@ -229,8 +215,6 @@ last_checked: 2026-09-27
 ```
 .
 ├── .claude/
-│   ├── agents/      — runnable Claude Code agent definitions
-│   │                  (only Scout lives here; it is optional)
 │   ├── skills/      — reference docs & instructions: stage guides + the
 │   │                  "ingest …, update the bundle" command definition
 │   └── settings.json— which commands Claude may run without asking
@@ -243,10 +227,10 @@ last_checked: 2026-09-27
 └── README.md        — this file
 ```
 
-Note the distinction inside `.claude/`: `agents/` holds *runnable* agent
-definitions (today only Scout, which is not part of the automatic flow),
-while `skills/` holds *reference documentation* like the stage guides, plus
-the skill that powers the `ingest <url>, update the bundle` command.
+Note that `.claude/skills/` holds *reference documentation* like the stage
+guides, plus the skill that powers the `ingest <url>, update the bundle`
+command. There are no runnable Claude Code agent definitions in this
+project — the pipeline is driven by that one skill and the Python driver.
 
 ## About CLAUDE.md
 
@@ -320,7 +304,6 @@ Recommended reading order:
 1. **README.md** (this file) — the big picture
 2. **CLAUDE.md** — the engineering ground rules and pipeline contract
 3. **.claude/skills/** — plain-English guides to what each part does
-   (`.claude/agents/` holds the runnable Scout definition)
 4. **pipeline/** — the actual code, one file per stage
 5. **tests/** — what "correct" means for each stage
 6. **knowledge/** — the finished output, best read via INDEX.md
@@ -329,8 +312,8 @@ Each step adds detail to the same story told by the previous one.
 
 ## Important Terms
 
-* **Agent** — a helper with one specific job. Only Scout is a runnable
-  Claude Code agent in this project; the pipeline stages are code.
+* **Agent** — a helper with one specific job. This project defines no
+  runnable Claude Code agents; the pipeline stages are code.
 * **LLM / Claude** — the AI model used to make semantic (fuzzy, judgment)
   decisions, like understanding what a page says.
 * **Hash** — a fingerprint of content. Same fingerprint means the content

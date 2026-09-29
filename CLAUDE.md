@@ -34,9 +34,8 @@ applied.
    `knowledge/`, update the index (`knowledge/INDEX.md`) and change log
    (`knowledge/CHANGELOG.md`) in the same atomic batch.
 
-Discovery (finding candidate URLs for a topic) exists as the optional Scout
-agent and is NOT wired into this flow — the pipeline starts at Fetch with
-URLs the user provides.
+The pipeline starts at Fetch with URLs the user provides; there is no
+automated source discovery.
 
 ## OKF document format
 Every document in `knowledge/` is plain markdown with YAML frontmatter:
@@ -96,13 +95,9 @@ source must update the same document, not create a new one).
   concept matches (`pipeline/concepts.py`). Claude never decides winners,
   scores, identities, or file writes.
 
-## Subagents
-`.claude/agents/` contains exactly ONE runnable Claude Code agent:
-- `scout` (`Discovery_Agent.md`) — optional source discovery for a topic.
-  It is NOT part of the production flow, which starts at Fetch with URLs
-  the user provides via `claude -p "ingest <url>, update the bundle"`.
-
-The pipeline stages themselves are Python modules under `pipeline/`, not
+## Agents vs. stages
+This project defines NO runnable Claude Code agents (`.claude/agents/` is
+empty). The pipeline stages are Python modules under `pipeline/`, not
 agents; their Claude-facing parts are the three LLM seams listed above,
 each invoked as a one-shot `claude -p` subprocess and each fakeable in
 tests. Stage documentation lives in `.claude/skills/`.
