@@ -85,5 +85,8 @@ documents published.
 
 `pipeline/orchestrate.py` (`orchestrate`, `main`); the command definition in
 [`.claude/skills/ingest-update-bundle/SKILL.md`](./ingest-update-bundle/SKILL.md);
-the permission allow-list in `.claude/settings.json`. Tests:
+the permission allow-list in `.claude/settings.json`. The driver accepts
+plain `URL` arguments or the full user phrase via
+`--phrase "ingest <url>, update the bundle"` (every `http(s)://…` URL is
+parsed out of the phrase deterministically). Tests:
 `tests/test_orchestrate.py`.

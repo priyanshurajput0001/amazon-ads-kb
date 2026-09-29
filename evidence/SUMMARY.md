@@ -20,6 +20,10 @@ sandboxes (production `knowledge/` and `state/` untouched):
   same concept with the old value retained as a dated conflict; reworded
   and identical claims create no duplicates. Declares its synthetic-source
   limitation plainly.
+- [`phase5-clean-clone.md`](./phase5-clean-clone.md) — fresh clone +
+  documented setup + the user-facing ingest command on one real source:
+  32 claims → 14 concepts (12 published, 2 updated in place), 0 LLM
+  timeouts, lint clean. Packaged after the fact from the recorded run.
 
 `verify-ingest.sh` in this directory is the reusable driver script for
 re-running the real-ingest and byte-identity checks (phase 1/phase 2 of

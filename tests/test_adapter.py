@@ -71,6 +71,14 @@ A tool I wrote for fun. See my blog at https://blog.example/writing for more.
 This project is not affiliated with anyone.
 """
 
+# The exact adversarial false-positive case from the final review: generic
+# repository wording + an Amazon docs link does NOT establish ownership.
+COMMUNITY_SDK_README = """# ads-sdk
+This repository contains a community Python client for the Amazon Ads API.
+Official API documentation: https://advertising.amazon.com/API/docs/en-us
+MIT licensed, not affiliated with Amazon.
+"""
+
 
 class ContentEvidenceClassificationTests(unittest.TestCase):
     """Review criticism: 'classify sources by page content, not a host list'
@@ -112,6 +120,41 @@ class ContentEvidenceClassificationTests(unittest.TestCase):
         self.assertEqual(
             classify_source_type("https://blog.example/ads-tutorial",
                                  content=third_party),
+            "community")
+
+    def test_community_sdk_readme_is_not_official(self):
+        # Regression (final adversarial review): generic wording such as
+        # "This repository contains ..." plus an Amazon docs link must NOT
+        # be classified official — the phrase establishes nothing about
+        # ownership, and the README even disclaims affiliation.
+        self.assertEqual(
+            classify_source_type("https://github.com/independent-dev/ads-sdk",
+                                 content=COMMUNITY_SDK_README),
+            "community")
+        self.assertEqual(
+            classify_source_type(
+                "https://raw.githubusercontent.com/independent-dev/ads-sdk"
+                "/main/README.md",
+                content=COMMUNITY_SDK_README),
+            "community")
+
+    def test_explicit_ownership_marker_is_official(self):
+        content = ("Utilities for the Ads API. This repository is maintained "
+                   "by Amazon. Docs: https://advertising.amazon.com/API/docs/en-us\n")
+        self.assertEqual(
+            classify_source_type("https://example.example/utils",
+                                 content=content),
+            "official")
+
+    def test_generic_wording_without_amazon_title_stays_community(self):
+        # generic self-reference + docs link, but the document's own title
+        # does not name an Amazon product -> community
+        content = ("# awesome-tool\nThis repository will be home to helpers "
+                   "for the Amazon Ads API. See "
+                   "https://advertising.amazon.com/API/docs/en-us\n")
+        self.assertEqual(
+            classify_source_type("https://github.com/someone/awesome-tool",
+                                 content=content),
             "community")
 
     def test_transport_does_not_determine_authority(self):

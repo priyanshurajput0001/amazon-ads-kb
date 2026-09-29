@@ -131,6 +131,17 @@ Several URLs at once also work — the system processes each independently:
 claude -p "ingest <url1>, <url2>, <url3>, update the bundle"
 ```
 
+Under the hood, Claude hands the URLs to one deterministic driver command.
+The driver also accepts the full user phrase directly, with the URLs parsed
+out of it — the exact same form of request, without the AI wrapper:
+
+```bash
+python3 -m pipeline.orchestrate --phrase "ingest <url>, update the bundle"
+```
+
+(`--phrase TEXT` extracts every `http(s)://…` URL from the phrase; plain
+`URL` arguments work too: `python3 -m pipeline.orchestrate URL [URL ...]`.)
+
 In plain English, that command does this: Claude reads your request, hands
 the URLs to the pipeline driver (`python3 -m pipeline.orchestrate`), which
 downloads each page, fingerprints it, and — only if the content is new or

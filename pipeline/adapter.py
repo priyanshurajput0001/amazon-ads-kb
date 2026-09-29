@@ -59,35 +59,61 @@ OFFICIAL_URL_PREFIXES = ("https://github.com/amzn",)  # amzn org root and subpat
 # Content self-provenance (review: "classify sources by page content, not a
 # host list"). A source that is not on a known-official host is OFFICIAL
 # when its own fetched content (a) points at the official Amazon Ads
-# documentation site and (b) declares Amazon ownership in its own voice,
-# via this fixed, auditable marker list. Deterministic string evidence —
-# never an LLM judgment. Authority follows the CONTENT, so the transport
-# (raw.githubusercontent.com, a mirror, ...) can no longer mask an
-# Amazon-owned source, and third-party pages that merely LINK to Amazon
-# docs without owning voice stay community.
+# documentation site and (b) proves Amazon ownership, via ONE of two
+# deterministic, auditable signals:
+#   1. an EXPLICIT ownership marker anywhere in the text, or
+#   2. a SELF-TITLED Amazon artifact: the document's own title/first
+#      heading names an Amazon product (e.g. "# Amazon Ads advanced tools
+#      docs") — third-party projects do not title themselves as Amazon
+#      artifacts.
+# Generic self-reference phrasing ("this repository contains ...") alone
+# establishes nothing and is deliberately NOT a marker: a community SDK
+# README uses exactly that wording next to a docs link. Deterministic
+# string evidence — never an LLM judgment. Authority follows the CONTENT,
+# so the transport (raw.githubusercontent.com, a mirror, ...) can no
+# longer mask an Amazon-owned source, while third-party pages that merely
+# LINK to Amazon docs stay community.
 OFFICIAL_DOCS_HOST_REFERENCES = tuple(
     f"https://{host}" for host in OFFICIAL_HOSTS)
 AMAZON_OWNERSHIP_MARKERS = (
     "© amazon", "copyright amazon", "copyright © amazon",
-    "amazon.com, inc.", "maintained by amazon", "an amazon company",
-    "this repository contains", "this repository will be",
+    "amazon.com, inc.", "maintained by amazon", "owned by amazon",
+    "amazon maintains", "an amazon company", "official amazon repository",
 )
+AMAZON_TITLE_MARKERS = ("amazon ads", "amazon advertising",
+                        "amazon marketing")
 
 
 class AdapterError(ValueError):
     """An input violates the Adapter contract (bad claims doc shape)."""
 
 
+def _document_title(text: str) -> str:
+    """The document's own title: the first markdown heading, else the
+    first non-blank line. Deterministic; capped for auditability."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            return stripped.lstrip("#").strip()[:200]
+        return stripped[:200]
+    return ""
+
+
 def _declares_amazon_provenance(content: str | None) -> bool:
     """True when the fetched content itself proves Amazon provenance:
-    a canonical pointer to the official docs host AND an ownership
-    declaration in the content's own voice."""
+    a canonical pointer to the official docs host AND either an explicit
+    ownership marker or an Amazon-product self-title."""
     if not content:
         return False
     text = content.lower()
     if not any(ref in text for ref in OFFICIAL_DOCS_HOST_REFERENCES):
         return False
-    return any(marker in text for marker in AMAZON_OWNERSHIP_MARKERS)
+    if any(marker in text for marker in AMAZON_OWNERSHIP_MARKERS):
+        return True
+    title = _document_title(text)
+    return any(marker in title for marker in AMAZON_TITLE_MARKERS)
 
 
 def classify_source_type(

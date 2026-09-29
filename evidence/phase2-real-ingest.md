@@ -29,6 +29,17 @@ One ingest run of three genuinely new public URLs, one per source type:
   `community`, and they were rejected by the deterministic rules
   `official-overrides-community` and `support-required` against the official
   repository page — the trust machinery working across source types.
+
+  > **Historical note on source classification (2026-09-29):** this Phase-2
+  > run was executed **before** commit `491e054`. At that time the raw
+  > Amazon GitHub content was classified under the previous, URL-only
+  > authority rule. Commit `491e054` subsequently introduced
+  > content-evidence authority classification (so Amazon-owned content is
+  > not rejected merely because it arrives via `raw.githubusercontent.com`),
+  > and a later P1 fix further tightened that rule to prevent third-party
+  > README false positives. The classification result recorded above is
+  > preserved as historical evidence and should **not** be interpreted as
+  > the current classifier's behavior.
 - Merge: 43 input facts → **7 output concepts**.
 - Publish: **7 concepts published**, INDEX and CHANGELOG updated, fetch
   state committed for all 3 URLs only after publication succeeded.
