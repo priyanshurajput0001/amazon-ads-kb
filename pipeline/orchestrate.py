@@ -1,24 +1,33 @@
 """Orchestration driver: sequence the existing pipeline stages for URLs.
 
 Claude Code is the top-level orchestrator: it parses the user's request
-("fetch <url>, update the bundle"), invokes this driver as ONE command, and
+("ingest <url>, update the bundle"), invokes this driver as ONE command, and
 relays the JSON report. This module contains NO pipeline logic — every step
 below is a call into an existing stage; the only added value is sequencing
-and the short-circuit the contract requires:
+and the short-circuits the contract requires:
 
     fetch verdict unchanged   -> STOP that URL (nothing downstream runs at all)
     fetch failed / HTML cache -> STOP that URL, report the reason honestly
-    new or changed markdown   -> Extract -> Adapter -> Validator -> Merger -> Publisher
+    new or changed markdown   -> Extract -> Adapter -> Validator -> Merger
+                                  (matched against the existing bundle)
+                                  -> Publisher
+
+Fetch-state safety: the Fetch stage stages a new content hash as PENDING;
+this driver commits it only AFTER the Publisher succeeded for the URLs that
+flowed through. A failure anywhere downstream leaves the previous hash
+committed, so the next run re-processes the source instead of silently
+skipping it at Fetch.
 
 Per-URL isolation: a URL that stops early never blocks the others, and a
 failure in a shared stage (validate/merge/publish) aborts the run BEFORE
 publishing, so a half-failed run can never corrupt the knowledge bundle.
 
-The Extractor and Merger LLM seams are the real ones by default (they shell
-out to the claude CLI themselves); tests inject fakes through the same
-parameters used by every other stage.
+The Extractor, concept-matching and Merger LLM seams are the real ones by
+default (they shell out to the claude CLI themselves); tests inject fakes
+through the same parameters used by every other stage.
 
 CLI: python3 -m pipeline.orchestrate URL [URL ...]
+     python3 -m pipeline.orchestrate --phrase "ingest <url>, update the bundle"
 Prints one JSON report; exit 2 only for usage errors (no URLs given).
 """
 
@@ -28,26 +37,43 @@ import argparse
 import datetime
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 
+from pipeline import concepts as concepts_mod
 from pipeline.adapter import DEFAULT_CLAIMS_PATH, adapt_url
 from pipeline.extractor import DEFAULT_CLAIMS_PATH as EXTRACT_CLAIMS_PATH
 from pipeline.extractor import claude_cli_extract, extract_url
 from pipeline.fetch import DEFAULT_CACHE_PATH, DEFAULT_STATE_PATH, fetch_many
 from pipeline.fetch import fetch_many_with_state
 from pipeline.merger import claude_cli_classify, merge_facts
-from pipeline.publisher import DEFAULT_KNOWLEDGE_PATH, publish_facts
-from pipeline.state import load_state
+from pipeline.publisher import DEFAULT_KNOWLEDGE_PATH, publish_concepts
+from pipeline.state import commit_state, load_state
 from pipeline.validator import validate_facts
 
 logger = logging.getLogger("pipeline.orchestrate")
 
 ALL_STAGES = ("fetch", "extract", "adapter", "validator", "merger", "publisher")
 
+URL_RE = re.compile(r"https?://[^\s,\"'<>)]+")
+
 
 class OrchestratorError(ValueError):
     """Usage-level failure (no URLs provided)."""
+
+
+def parse_ingest_phrase(text: str) -> list[str]:
+    """Deterministically extract every http(s) URL from a user phrase like
+    'ingest <url1>, <url2>, update the bundle'. Order preserved, duplicates
+    and trailing punctuation dropped. The word 'ingest' itself carries no
+    URL and is simply not matched."""
+    urls: list[str] = []
+    for match in URL_RE.findall(text):
+        url = match.rstrip(".,;:!")
+        if url not in urls:
+            urls.append(url)
+    return urls
 
 
 def orchestrate(
@@ -57,13 +83,22 @@ def orchestrate(
     cache_path: str | Path | None = None,
     claims_path: str | Path | None = None,
     knowledge_dir: str | Path | None = None,
-    fetcher=fetch_many,
-    extract_llm=claude_cli_extract,
-    merge_llm=claude_cli_classify,
+    fetcher=None,
+    extract_llm=None,
+    classify_llm=None,
+    match_llm=None,
     now: datetime.datetime | None = None,
 ) -> dict:
-    """Run the pipeline for each URL. Returns the full report dict."""
+    """Run the pipeline for each URL. Returns the full report dict.
+
+    Seam defaults (fetcher, LLM functions) are resolved at CALL time so
+    tests can patch the module-level implementations.
+    """
     urls = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
+    fetcher = fetcher or fetch_many
+    extract_llm = extract_llm or claude_cli_extract
+    classify_llm = classify_llm or claude_cli_classify
+    match_llm = match_llm or concepts_mod.claude_cli_concept_match
     if not urls:
         raise OrchestratorError("no URLs provided")
     now = now or datetime.datetime.now(datetime.UTC)
@@ -120,8 +155,13 @@ def orchestrate(
             continue
         extracted_urls.append(url)
 
+    report: dict = {"urls": per_url, "stages_executed": ["fetch"]}
+    if extracted_urls:
+        report["stages_executed"].append("extract")
+
     # ---- Stage 3: Adapter (only for successfully extracted URLs) ----
     facts: list[dict] = []
+    adapted_urls: list[str] = []
     for entry in per_url:
         url = entry["url"]
         if url not in extracted_urls:
@@ -131,11 +171,11 @@ def orchestrate(
                             "fact_count": adapted.get("fact_count", 0)}
         if adapted["status"] == "ok":
             facts.extend(adapted["facts"])
+            if adapted.get("fact_count", 0) > 0:
+                adapted_urls.append(url)
         else:
             entry.update(stopped_at="adapter", error=adapted["error"])
             logger.warning("%s: adapter failed — %s", url, adapted["error"])
-
-    report: dict = {"urls": per_url, "stages_executed": ["fetch"]}
 
     if not facts:
         report["knowledge_bundle_modified"] = False
@@ -161,17 +201,26 @@ def orchestrate(
     }
 
     try:
-        merged = merge_facts(validated, llm=merge_llm)
+        # The maintained bundle participates: concepts are matched against
+        # the existing documents (deterministic candidates, LLM only in the
+        # ambiguous band — the bundle is never loaded into the LLM whole).
+        existing = concepts_mod.load_bundle(knowledge_dir)
+        merged = merge_facts(validated, existing=existing,
+                             classify_llm=classify_llm, match_llm=match_llm,
+                             today=now.date().isoformat())
     except Exception as exc:  # MergerError and friends
         report["stage_failed"] = {"stage": "merger", "error": str(exc)}
         report["knowledge_bundle_modified"] = False
         logger.error("merger failed — aborting before publish: %s", exc)
         return report
     report["stages_executed"].append("merger")
-    report["merge"] = {"input": len(validated), "output": len(merged)}
+    report["merge"] = {"input_facts": len(validated),
+                       "output_concepts": len(merged["concepts"]),
+                       "rejected": len(merged["rejected"])}
 
     try:
-        published = publish_facts(merged, knowledge_dir=knowledge_dir, now=now)
+        published = publish_concepts(merged, knowledge_dir=knowledge_dir,
+                                     now=now)
     except Exception as exc:  # PublisherError and friends
         report["stage_failed"] = {"stage": "publisher", "error": str(exc)}
         report["knowledge_bundle_modified"] = False
@@ -181,11 +230,19 @@ def orchestrate(
     report["publish"] = published
     report["knowledge_bundle_modified"] = bool(published["published"]
                                                or published["updated"])
+
+    # ---- Commit fetch state ONLY after publication succeeded ----
+    committed = commit_state(state_path, adapted_urls)
+    if committed:
+        logger.info("committed fetch state for %d URL(s) after successful "
+                    "publication", len(committed))
+    report["fetch_state_committed"] = committed
     return report
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: python3 -m pipeline.orchestrate URL [URL ...]
+    or:               python3 -m pipeline.orchestrate --phrase "..."
 
     Prints one JSON report covering every URL. Exit 0 even when individual
     URLs fail (their failures are data in the report); exit 2 only for usage
@@ -195,13 +252,23 @@ def main(argv: list[str] | None = None) -> int:
         description="Orchestrate fetch->extract->adapter->validator->merger->"
                     "publisher for URL(s), stopping per URL on unchanged "
                     "content or failure.")
-    parser.add_argument("urls", nargs="+", metavar="URL")
+    parser.add_argument("urls", nargs="*", metavar="URL")
+    parser.add_argument("--phrase", metavar="TEXT",
+                        help='full user phrase, e.g. "ingest <url>, update '
+                             'the bundle"; URLs are parsed out of it')
     args = parser.parse_args(argv)
+
+    urls = args.urls
+    if args.phrase is not None:
+        urls = parse_ingest_phrase(args.phrase) + [
+            u for u in urls if u not in parse_ingest_phrase(args.phrase)]
+    if not urls:
+        parser.error("no URLs given (pass URLs or --phrase)")
 
     logging.basicConfig(level=logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")
     try:
-        report = orchestrate(args.urls)
+        report = orchestrate(urls)
     except OrchestratorError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

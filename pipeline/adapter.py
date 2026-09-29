@@ -91,9 +91,10 @@ def _parse_dt(value: object) -> datetime.datetime | None:
 def _derive_change(entry: SourceState, doc: dict) -> tuple[str, str | None]:
     """(is_changed, last_run). "N" only when a fetch after extraction re-saw
     the same sha256 — the content version survived a later run unchanged."""
-    fetched = _parse_dt(entry.fetched_at)
+    fetched = _parse_dt(entry.pending_fetched_at or entry.fetched_at)
     extracted_run = _parse_dt(doc.get("fetched_at"))
-    same_content = entry.sha256 is not None and entry.sha256 == doc.get("sha256")
+    same_content = (entry.current_content_sha256 is not None
+                    and entry.current_content_sha256 == doc.get("sha256"))
     if (fetched is not None and extracted_run is not None
             and fetched > extracted_run and same_content):
         return "N", doc.get("fetched_at")
@@ -121,7 +122,7 @@ def build_facts(
             continue
         facts.append({
             "url": entry.url,
-            "date": entry.fetched_at,
+            "date": entry.pending_fetched_at or entry.fetched_at,
             "content": text,
             "is_changed": is_changed,
             "last_run": last_run,
@@ -150,14 +151,15 @@ def adapt_url(
     if entry is None:
         return {"url": url, "status": "error",
                 "error": "URL not found in fetch state (never fetched)"}
-    if not entry.sha256:
+    sha = entry.current_content_sha256
+    if not sha:
         return {"url": url, "status": "error",
                 "error": "no content hash in fetch state (never successfully fetched)"}
-    claims_file = Path(claims_dir) / f"{entry.sha256}.json"
+    claims_file = Path(claims_dir) / f"{sha}.json"
     if not claims_file.exists():
         return {"url": url, "status": "error",
                 "error": (f"no claims extracted for current content version "
-                          f"({entry.sha256[:12]}...) — run the Extractor first")}
+                          f"({sha[:12]}...) — run the Extractor first")}
     try:
         doc = json.loads(claims_file.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -165,7 +167,7 @@ def adapt_url(
                 "error": f"corrupt claims file: {exc}"}
     if doc.get("status") != "ok" or not isinstance(doc.get("claims"), list):
         return {"url": url, "status": "error",
-                "error": f"claims doc for {entry.sha256[:12]}... is not a valid ok extraction"}
+                "error": f"claims doc for {sha[:12]}... is not a valid ok extraction"}
     try:
         facts = build_facts(doc, entry, official_hosts, official_url_prefixes)
     except AdapterError as exc:

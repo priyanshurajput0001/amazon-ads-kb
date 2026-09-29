@@ -107,3 +107,91 @@
   Sources: https://github.com/amzn
 - **kb-e4e31f9b4132f103** — created. resolution=single_source, confidence_score=0.60, status=valid.
   Sources: https://github.com/amzn
+- **kb-5590b5004233bb29** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-57a66076ca249339** — created. resolution=complementary_merge, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-a9ec55935e0fda6d** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-c41c62246324d324** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-d489171822d27071** — created. resolution=single_source, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+- **kb-db47f21eaf19e42f** — created. resolution=complementary_merge, confidence_score=0.60, status=valid.
+  Sources: https://github.com/amzn
+
+## 2026-09-29
+- **ads-events-api-gtm-tag** — created. 2 facts, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://github.com/amzn
+- **advanced-tools-guide** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **alexa-skills-kit-js** — created. 2 facts, 0 recorded conflicts. resolutions: duplicate_merged, single_source.
+  Sources: https://github.com/amzn
+- **amazon-ads-api-fees** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/about-api
+- **amazon-ads-api-global-expansion-guide-designed-help** — created. 2 facts, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **amazon-ads-api-integration-dashboard-used-monitor-manage** — created. 3 facts, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us, https://advertising.amazon.com/about-api
+- **amazon-ads-api-support** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/onboarding/overview
+- **amazon-ads-api-supported-products** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/about-api
+- **amazon-ads-api-test-accounts** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/about-api
+- **amazon-ads-api-use-cases** — created. 2 facts, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/about-api
+- **amazon-ads-bulk-operations** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/about-api
+- **amazon-ads-mcp-server** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **amazon-ads-offers-technology-solutions-help-companies-scale** — created. 4 facts, 0 recorded conflicts. resolutions: duplicate_merged, single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us, https://advertising.amazon.com/API/docs/en-us/guides/overview, https://advertising.amazon.com/about-api, https://github.com/amzn
+- **amazon-ads-partner-directory** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/about-api
+- **amazon-aps-swift-packages** — created. 1 fact, 0 recorded conflicts. resolutions: duplicate_merged.
+  Sources: https://github.com/amzn
+- **amazon-github-organization** — created. 6 facts, 0 recorded conflicts. resolutions: duplicate_merged, single_source.
+  Sources: https://github.com/amzn
+- **amazon-maintains-public-github-repository-selling-partner-api** — created. 1 fact, 0 recorded conflicts. resolutions: duplicate_merged.
+  Sources: https://github.com/amzn
+- **amazon-marketing-cloud-overview** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **amazon-marketing-stream-provides-hourly-campaign-metrics-notifications** — created. 2 facts, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us, https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **amazon-s-github-organization-includes-repository-titled-amazon** — created. 1 fact, 0 recorded conflicts. resolutions: duplicate_merged.
+  Sources: https://github.com/amzn
+- **amazon-s-selling-partner-api-docs-repository-contains** — created. 3 facts, 0 recorded conflicts. resolutions: duplicate_merged, single_source.
+  Sources: https://github.com/amzn
+- **amazon-s-selling-partner-api-models-repository-contains** — created. 2 facts, 0 recorded conflicts. resolutions: duplicate_merged, single_source.
+  Sources: https://github.com/amzn
+- **api-release-notes** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **bulksheets-overview** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **bulksheets-video-tutorials** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **computer-vision-basics-microsoft-excel** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://github.com/amzn
+- **developer-guides-translations** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **export-apis** — created. 2 facts, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us
+- **new-amazon-ads-reporting-api-open-beta** — created. 21 facts, 0 recorded conflicts. resolutions: duplicate_merged, single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us, https://advertising.amazon.com/API/docs/en-us/guides/onboarding/overview, https://advertising.amazon.com/API/docs/en-us/guides/overview, https://advertising.amazon.com/about-api
+- **pecos** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://github.com/amzn
+- **programmatic-advertising** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/about-api
+- **reporting-measurement** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **selling-partner-agentic-toolkit** — created. 2 facts, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://github.com/amzn
+- **selling-partner-api-postman** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://github.com/amzn
+- **smoke-framework** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://github.com/amzn
+- **sponsored-display-get-started** — created. 2 facts, 0 recorded conflicts. resolutions: unresolved_conflict.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+- **unboxed-2026-developer-track** — created. 1 fact, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us

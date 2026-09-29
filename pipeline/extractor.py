@@ -171,25 +171,26 @@ def extract_url(
 ) -> dict:
     """Run the Extractor for one URL; returns the CLI result line."""
     entry = states.get(url)
-    if entry is None or not entry.sha256:
+    if entry is None or not entry.current_content_sha256:
         return {"url": url, "status": "error",
                 "error": "URL not found in fetch state (never successfully fetched)"}
 
-    md_path = Path(cache_dir) / f"{entry.sha256}.md"
+    sha = entry.current_content_sha256  # pending version when one exists
+    md_path = Path(cache_dir) / f"{sha}.md"
     if not md_path.exists():
-        if (Path(cache_dir) / f"{entry.sha256}.html").exists():
+        if (Path(cache_dir) / f"{sha}.html").exists():
             return {"url": url, "status": "error",
                     "error": "cache is HTML, not Markdown; extraction unsupported"}
         return {"url": url, "status": "error", "error": "cache file missing"}
 
     content = md_path.read_text(encoding="utf-8")
-    if _sha256(content) != entry.sha256:
+    if _sha256(content) != sha:
         return {"url": url, "status": "error",
                 "error": "integrity check failed: cache hash does not match fetch state"}
 
-    claims_file = Path(claims_dir) / f"{entry.sha256}.json"
+    claims_file = Path(claims_dir) / f"{sha}.json"
     if claims_file.exists():
-        return {"url": url, "status": "ok", "sha256": entry.sha256, "skipped": True,
+        return {"url": url, "status": "ok", "sha256": sha, "skipped": True,
                 "reason": "claims already exist", "claims_path": str(claims_file)}
 
     try:
@@ -200,19 +201,19 @@ def extract_url(
     doc = {
         "schema_version": SCHEMA_VERSION,
         "source_url": url,
-        "sha256": entry.sha256,
-        "fetched_at": entry.fetched_at,
+        "sha256": sha,
+        "fetched_at": entry.pending_fetched_at or entry.fetched_at,
         "extracted_at": now or datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
         "status": "ok",
         "claims": claims,
     }
     try:
-        validate_extraction(doc, content, url, entry.sha256)
+        validate_extraction(doc, content, url, sha)
     except ValidationError as exc:
         return {"url": url, "status": "error", "error": f"invalid extraction: {exc}"}
 
     _write_json_atomic(claims_file, doc)
-    return {"url": url, "status": "ok", "sha256": entry.sha256, "skipped": False,
+    return {"url": url, "status": "ok", "sha256": sha, "skipped": False,
             "claims_path": str(claims_file), "claim_count": len(claims)}
 
 

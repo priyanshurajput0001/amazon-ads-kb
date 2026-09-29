@@ -31,15 +31,22 @@ One or more web addresses (URLs), e.g.
 4. **Compare** with the fingerprint stored from the previous run.
 5. **Determine the verdict:** `new` (first sighting), `changed`
    (fingerprint differs), `unchanged` (fingerprint matches), or `error`.
-6. **Cache** the content in `state/cache/` under its fingerprint, so every
+6. **Stage the fingerprint as pending** — the new hash is recorded but
+   NOT committed yet. The orchestrator commits it only after the pipeline
+   published successfully; if anything downstream fails, the previous
+   fingerprint stays committed and the next run re-processes the source
+   (it can never look "already done" after a failed run).
+7. **Cache** the content in `state/cache/` under its fingerprint, so every
    historical version is kept and old copies are never overwritten.
 
 ## Rules
 
 * Never fabricates content: if only raw HTML code (not readable text) can
   be downloaded, that is reported as-is and the next stage refuses it.
-* A failed download keeps the last good fingerprint, so change detection
-  survives temporary outages.
+* A failed download keeps the last committed fingerprint, so change
+  detection survives temporary outages.
+* The Fetch stage never commits a new fingerprint itself — publication
+  success is what commits it (see ORCHESTRATE.md).
 * The Fetcher itself never decides to skip later stages — the orchestrator
   reads its verdict and decides. `unchanged` means everything after Fetch
   can stop, saving the expensive Claude extraction.

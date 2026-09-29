@@ -1,405 +1,262 @@
-"""Tests for pipeline.merger — offline; the LLM seam is faked.
+"""Tests for pipeline.merger — offline; both LLM seams are faked.
 
-Facts here are shaped exactly like Validator output: the original fields
-plus "confidence_score" and "status".
+Focus: the behaviors the external review demanded —
+  - new facts merge INTO existing concepts (the bundle participates)
+  - conflicts keep provenance; losers are retained, never silently dropped
+  - duplicates collapse to one fact with all sources
+  - complementary facts coexist (no run-on space-joined sentences)
+  - unresolved ties keep both sides, stamped unresolved_conflict
 """
 
-import copy
-import io
-import json
-import logging
-import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
-from pathlib import Path
-from unittest.mock import patch
 
-from pipeline.merger import LlmError, MergerError, _parse_label, main, merge_facts
+from pipeline.merger import (
+    LlmError,
+    MergerError,
+    _classify_deterministic,
+    _needs_llm,
+    merge_facts,
+)
+from pipeline.concepts import canonical_tokens
 
-DATE_OLD = "2026-09-20T00:00:00+00:00"
-DATE_NEW = "2026-09-26T00:00:00+00:00"
+URL = "https://advertising.amazon.com/API/docs/en-us/test"
+URL2 = "https://github.com/amzn/some-repo"
+D1 = "2026-09-26T00:00:00+00:00"
+D2 = "2026-09-27T00:00:00+00:00"
+D3 = "2026-09-28T00:00:00+00:00"
 
 
-def fact(url, content, source_type="official", status="valid", score=0.6,
-         date=DATE_OLD, **over):
-    """Validator-shaped fact; `over` patches any field."""
+def fact(content, url=URL, date=D2, source_type="official", score=0.6,
+         status="valid", hint=None, **extra):
     base = {
-        "url": url,
-        "date": date,
-        "confidence_pct": 50,
-        "content": content,
-        "is_changed": "Y",
-        "last_run": None,
-        "source_type": source_type,
-        "community_agree_count": 0,
-        "confidence_score": score,
-        "status": status,
+        "url": url, "date": date, "content": content, "is_changed": "Y",
+        "last_run": None, "source_type": source_type,
+        "community_agree_count": 0, "topic_id": hint, "topic_hint": hint,
+        "confidence_score": score, "status": status,
     }
-    base.update(over)
+    base.update(extra)
     return base
 
 
-def fake_llm(default="duplicate", overrides=None, calls=None):
-    """LLM seam fake: `default` label, per-content-pair `overrides`.
-
-    An override (or default) that is an Exception instance is raised."""
-    overrides = overrides or {}
-
-    def _llm(a, b):
-        if calls is not None:
-            calls.append((a["url"], b["url"]))
-        value = overrides.get((a["content"], b["content"]), default)
-        if isinstance(value, Exception):
-            raise value
-        return value
-
-    return _llm
+def bundle_fact(content, url=URL, date=D1, source_type="official",
+                score=0.6, resolution="single_source", first_seen=None):
+    """A fact as it comes back out of an existing concept document."""
+    return {
+        "content": content,
+        "confidence_score": score,
+        "status": "valid",
+        "resolution": resolution,
+        "first_seen": first_seen or (date or "")[:10],
+        "sources": [{"url": url, "date": date, "source_type": source_type}],
+    }
 
 
-O = "official"
-C = "community"
-CONFLICT_TEXT = "Sponsored Brands campaigns require an active storefront."
-CONFLICT_TEXT_NOT = "Sponsored Brands campaigns do not require an active storefront."
-DUP_A = "Application approval may take up to 1 business day."
-DUP_B = "Applications for Amazon Ads API access may take up to 1 business day to be approved."
-COMP_A = "Direct advertisers, partners, and integrators are all eligible to apply."
-COMP_B = "Application approval may take up to 1 business day."
+def existing_concept(cid, title, facts, conflicts=()):
+    return {"id": cid, "title": title, "type": "concept",
+            "facts": list(facts), "conflicts": list(conflicts)}
 
 
-class SingleSourceTests(unittest.TestCase):
-    def test_single_fact_is_single_source_without_llm(self):
-        calls = []
-        f = fact("https://ads.amazon/a", "Sponsored Products ads appear in shopping results.")
-        out = merge_facts([f], llm=fake_llm("duplicate", calls=calls))
-        self.assertEqual(out, [{
-            "content": f["content"],
-            "sources": [{"url": f["url"], "date": f["date"], "source_type": O}],
-            "confidence_score": 0.6,
-            "resolution": "single_source",
-            "status": "valid",
-        }])
-        self.assertEqual(calls, [])  # singleton group: the LLM is never invoked
-
-    def test_facts_without_topic_id_are_separate_singletons(self):
-        calls = []
-        out = merge_facts([
-            fact("https://ads.amazon/a", "Sponsored Products uses cost-per-click billing."),
-            fact("https://blog.example/x", "Sponsored Display uses cost-per-click billing."),
-        ], llm=fake_llm("complementary", calls=calls))
-        self.assertEqual([f["resolution"] for f in out],
-                         ["single_source", "single_source"])
-        self.assertEqual(calls, [])  # no topic_id -> no group -> no pair calls
+def llm_yes(a, b):
+    return "complementary"
 
 
-class DuplicateTests(unittest.TestCase):
-    def test_duplicates_merge_into_one_fact(self):
-        out = merge_facts([
-            fact("https://ads.amazon/a", DUP_A, score=0.6, topic_id="approval"),
-            fact("https://docs.example/b", DUP_B, score=0.75, topic_id="approval"),
-        ], llm=fake_llm("duplicate"))
-        self.assertEqual(len(out), 1)
-        merged = out[0]
-        self.assertEqual(merged["resolution"], "duplicate_merged")
-        self.assertEqual(merged["content"], DUP_B)  # highest-scoring member, verbatim
-        self.assertEqual(merged["confidence_score"], 0.75)
-        self.assertEqual([s["url"] for s in merged["sources"]],
-                         ["https://ads.amazon/a", "https://docs.example/b"])
-
-    def test_all_contributing_sources_preserved(self):
-        out = merge_facts([
-            fact(f"https://mirror.example/{c}", DUP_A, topic_id="approval")
-            for c in "abcd"
-        ], llm=fake_llm("duplicate"))
-        self.assertEqual(len(out), 1)
-        self.assertEqual(len(out[0]["sources"]), 4)
-        self.assertEqual({s["url"] for s in out[0]["sources"]},
-                         {f"https://mirror.example/{c}" for c in "abcd"})
+def llm_match_no(new_claim, title, existing_claims):
+    return False
 
 
-class ConflictTests(unittest.TestCase):
-    def llm_for(self):
-        return fake_llm("conflicting")
-
-    def test_authority_beats_recency(self):
-        # Official is OLDER and alone; community is newer — authority still wins.
-        out = merge_facts([
-            fact("https://ads.amazon/a", CONFLICT_TEXT, source_type=O,
-                 date=DATE_OLD, topic_id="storefront"),
-            fact("https://forum.example/t1", CONFLICT_TEXT_NOT, source_type=C,
-                 date=DATE_NEW, topic_id="storefront"),
-        ], llm=self.llm_for())
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0]["content"], CONFLICT_TEXT)
-        self.assertEqual(out[0]["resolution"], "conflict_resolved_by_authority")
-
-    def test_community_majority_does_not_override_official(self):
-        # Three community duplicates (a majority) still lose to one official.
-        out = merge_facts([
-            fact("https://ads.amazon/a", CONFLICT_TEXT, source_type=O,
-                 topic_id="storefront"),
-            *[fact(f"https://forum.example/t{i}", CONFLICT_TEXT_NOT,
-                   source_type=C, topic_id="storefront") for i in range(3)],
-        ], llm=fake_llm("conflicting", overrides={
-            (CONFLICT_TEXT_NOT, CONFLICT_TEXT_NOT): "duplicate",
-        }))
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0]["content"], CONFLICT_TEXT)
-        self.assertEqual(out[0]["resolution"], "conflict_resolved_by_authority")
-        self.assertEqual(len(out[0]["sources"]), 1)
-
-    def test_recency_wins_when_authority_tied(self):
-        out = merge_facts([
-            fact("https://ads.amazon/old", CONFLICT_TEXT, date=DATE_OLD,
-                 topic_id="storefront"),
-            fact("https://ads.amazon/new", CONFLICT_TEXT_NOT, date=DATE_NEW,
-                 topic_id="storefront"),
-        ], llm=self.llm_for())
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0]["content"], CONFLICT_TEXT_NOT)
-        self.assertEqual(out[0]["resolution"], "conflict_resolved_by_recency")
-
-    def test_majority_wins_when_authority_and_date_tied(self):
-        # Cluster of two agreeing official sources beats one official source.
-        out = merge_facts([
-            fact("https://ads.amazon/a1", CONFLICT_TEXT, topic_id="storefront"),
-            fact("https://ads.amazon/a2", CONFLICT_TEXT, topic_id="storefront"),
-            fact("https://ads.amazon/b", CONFLICT_TEXT_NOT, topic_id="storefront"),
-        ], llm=fake_llm("conflicting", overrides={
-            (CONFLICT_TEXT, CONFLICT_TEXT): "duplicate",
-        }))
-        self.assertEqual(len(out), 1)
-        self.assertEqual(out[0]["content"], CONFLICT_TEXT)
-        self.assertEqual(out[0]["resolution"], "conflict_resolved_by_majority")
-        self.assertEqual(len(out[0]["sources"]), 2)
-
-    def test_completely_tied_conflict_keeps_both(self):
-        out = merge_facts([
-            fact("https://ads.amazon/a", CONFLICT_TEXT, topic_id="storefront"),
-            fact("https://ads.amazon/b", CONFLICT_TEXT_NOT, topic_id="storefront"),
-        ], llm=self.llm_for())
-        self.assertEqual(len(out), 2)  # never silently discard one
-        for f in out:
-            self.assertEqual(f["resolution"], "unresolved_conflict")
-        self.assertEqual([f["content"] for f in out],
-                         [CONFLICT_TEXT, CONFLICT_TEXT_NOT])
-
-    def test_llm_not_called_during_conflict_resolution(self):
-        calls = []
-        merge_facts([
-            fact("https://ads.amazon/a", CONFLICT_TEXT, topic_id="storefront"),
-            fact("https://ads.amazon/b", CONFLICT_TEXT_NOT, date=DATE_NEW,
-                 topic_id="storefront"),
-        ], llm=fake_llm("conflicting", calls=calls))
-        # Exactly one classification call; resolution itself is pure Python.
-        self.assertEqual(len(calls), 1)
-
-
-class ComplementaryTests(unittest.TestCase):
-    def test_complementary_merge_preserves_both_details(self):
-        out = merge_facts([
-            fact("https://ads.amazon/a", COMP_A, topic_id="eligibility"),
-            fact("https://ads.amazon/b", COMP_B, topic_id="eligibility"),
-        ], llm=fake_llm("complementary"))
-        self.assertEqual(len(out), 1)
-        merged = out[0]
-        self.assertEqual(merged["resolution"], "complementary_merge")
-        self.assertEqual(merged["content"], f"{COMP_A} {COMP_B}")
-        self.assertEqual(len(merged["sources"]), 2)
-
-    def test_no_fabricated_information_in_complementary_merge(self):
-        out = merge_facts([
-            fact("https://ads.amazon/a", COMP_A, topic_id="eligibility"),
-            fact("https://ads.amazon/b", COMP_B, topic_id="eligibility"),
-        ], llm=fake_llm("complementary"))
-        # The merged content is EXACTLY the two originals joined — nothing added.
-        self.assertEqual(out[0]["content"], COMP_A + " " + COMP_B)
-        self.assertNotIn("however", out[0]["content"].lower())
-
-    def test_complementary_merge_blocked_by_conflicting_pair(self):
-        # A~B complementary, B~C complementary, but A~C conflicting: C must not
-        # be pulled into the merged CONTENT. The A~C conflict is then resolved
-        # by precedence — {A,B} (2 URLs) beats singleton C by majority — so C
-        # is dropped and the surviving cluster records the conflict rule.
-        out = merge_facts([
-            fact("https://ads.amazon/a", COMP_A, topic_id="t"),
-            fact("https://ads.amazon/b", COMP_B, topic_id="t"),
-            fact("https://ads.amazon/c", CONFLICT_TEXT, topic_id="t"),
-        ], llm=fake_llm("complementary", overrides={
-            (COMP_A, CONFLICT_TEXT): "conflicting",
-            (COMP_B, CONFLICT_TEXT): "complementary",
-        }))
-        self.assertEqual(len(out), 1)
-        merged = out[0]
-        self.assertEqual(merged["content"], f"{COMP_A} {COMP_B}")  # C's text kept out
-        self.assertEqual(merged["resolution"], "conflict_resolved_by_majority")
-        self.assertEqual([s["url"] for s in merged["sources"]],
-                         ["https://ads.amazon/a", "https://ads.amazon/b"])
-
-
-class PassThroughTests(unittest.TestCase):
-    def test_rejected_facts_pass_through_unchanged(self):
-        rejected = fact("https://blog.example/x", CONFLICT_TEXT_NOT,
-                        source_type=C, status="rejected", score=0.3,
-                        reason="contradicts official source(s) https://ads.amazon/a",
-                        topic_id="storefront")
-        calls = []
-        out = merge_facts([rejected,
-                           fact("https://ads.amazon/a", CONFLICT_TEXT,
-                                topic_id="storefront")],
-                          llm=fake_llm("conflicting", calls=calls))
-        self.assertEqual(out[0], rejected)  # byte-for-byte, original fields intact
-        self.assertEqual(out[1]["resolution"], "single_source")
-        self.assertEqual(calls, [])  # rejected fact is never even compared
-
-
-class ConfidenceStatusTests(unittest.TestCase):
-    def test_strongest_confidence_and_status_preserved(self):
-        out = merge_facts([
-            fact("https://ads.amazon/a", DUP_A, score=0.6,
-                 status="valid_low_confidence", topic_id="approval"),
-            fact("https://docs.example/b", DUP_B, score=0.75,
-                 status="valid", topic_id="approval"),
-        ], llm=fake_llm("duplicate"))
-        self.assertEqual(out[0]["confidence_score"], 0.75)
-        self.assertEqual(out[0]["status"], "valid")
-
-
-class FailSafeTests(unittest.TestCase):
-    def test_invalid_llm_json_reported_and_pair_kept_separate(self):
-        facts = [
-            fact("https://ads.amazon/a", DUP_A, topic_id="approval"),
-            fact("https://docs.example/b", DUP_B, topic_id="approval"),
-        ]
-        with self.assertLogs("pipeline.merger", level="WARNING") as captured:
-            out = merge_facts(facts, llm=fake_llm(LlmError("LLM returned invalid JSON")))
-        text = "\n".join(captured.output)
-        self.assertIn("LLM returned invalid JSON", text)
-        self.assertIn("https://ads.amazon/a", text)
-        self.assertIn("https://docs.example/b", text)
-        self.assertEqual([f["resolution"] for f in out],
-                         ["single_source", "single_source"])  # no silent guess
-
-    def test_invalid_label_handled_safely(self):
-        facts = [
-            fact("https://ads.amazon/a", DUP_A, topic_id="approval"),
-            fact("https://docs.example/b", DUP_B, topic_id="approval"),
-        ]
-        with self.assertLogs("pipeline.merger", level="WARNING"):
-            out = merge_facts(facts, llm=fake_llm("kinda-same"))
-        self.assertEqual(len(out), 2)  # kept separate, nothing dropped
-
-
-class LlmParseTests(unittest.TestCase):
-    def test_plain_json(self):
-        self.assertEqual(_parse_label('{"label": "duplicate"}'), "duplicate")
-
-    def test_fenced_json(self):
-        self.assertEqual(_parse_label('```json\n{"label": "conflicting"}\n```'),
-                         "conflicting")
-
-    def test_invalid_json_raises(self):
-        with self.assertRaises(LlmError):
-            _parse_label("they are the same, I think")
-
-    def test_invalid_label_raises(self):
-        with self.assertRaises(LlmError):
-            _parse_label('{"label": "same"}')
-
-
-class DeterminismTests(unittest.TestCase):
-    def test_same_input_same_output(self):
-        facts = [
-            fact("https://ads.amazon/a", CONFLICT_TEXT, topic_id="storefront"),
-            fact("https://forum.example/t1", CONFLICT_TEXT_NOT, source_type=C,
-                 topic_id="storefront"),
-            fact("https://ads.amazon/x", DUP_A, topic_id="approval"),
-            fact("https://docs.example/y", DUP_B, topic_id="approval"),
-            fact("https://blog.example/r", "Rumored feature.", status="rejected",
-                 score=0.15),
-        ]
-        first = merge_facts(copy.deepcopy(facts), llm=fake_llm("conflicting", overrides={
-            (DUP_A, DUP_B): "duplicate"}))
-        second = merge_facts(copy.deepcopy(facts), llm=fake_llm("conflicting", overrides={
-            (DUP_A, DUP_B): "duplicate"}))
-        self.assertEqual(json.dumps(first, sort_keys=True),
-                         json.dumps(second, sort_keys=True))
-
-    def test_output_order_follows_input_order(self):
-        out = merge_facts([
-            fact("https://blog.example/r", "Rumored.", status="rejected", score=0.15),
-            fact("https://ads.amazon/a", CONFLICT_TEXT, topic_id="storefront"),
-            fact("https://ads.amazon/x", DUP_A, topic_id="approval"),
-            fact("https://docs.example/y", DUP_B, topic_id="approval"),
-        ], llm=fake_llm("conflicting", overrides={(DUP_A, DUP_B): "duplicate"}))
-        self.assertEqual([f.get("url") or f["sources"][0]["url"] for f in out],
-                         ["https://blog.example/r", "https://ads.amazon/a",
-                          "https://ads.amazon/x"])
+def llm_match_yes(new_claim, title, existing_claims):
+    return True
 
 
 class ContractTests(unittest.TestCase):
-    def test_not_a_list_rejected(self):
+    def test_rejects_non_list(self):
         with self.assertRaises(MergerError):
-            merge_facts({"url": "https://ads.amazon/a"})
+            merge_facts({"not": "a list"}, classify_llm=llm_yes,
+                        match_llm=llm_match_no)
 
-    def test_missing_status_rejected(self):
-        bad = fact("https://ads.amazon/a", "Some claim.")
-        del bad["status"]
+    def test_rejects_missing_status(self):
         with self.assertRaises(MergerError):
-            merge_facts([bad])
+            merge_facts([{"url": URL, "content": "x",
+                          "source_type": "official"}],
+                        classify_llm=llm_yes, match_llm=llm_match_no)
 
-    def test_unknown_status_rejected(self):
-        with self.assertRaises(MergerError):
-            merge_facts([fact("https://a.example/", "x", status="maybe")])
-
-    def test_participating_fact_needs_confidence_score(self):
-        bad = fact("https://ads.amazon/a", "Some claim.")
-        del bad["confidence_score"]
-        with self.assertRaises(MergerError):
-            merge_facts([bad])
+    def test_rejected_facts_pass_through_unmerged(self):
+        out = merge_facts([fact("boo", status="rejected")],
+                          classify_llm=llm_yes, match_llm=llm_match_no)
+        self.assertEqual(out["concepts"], [])
+        self.assertEqual(len(out["rejected"]), 1)
 
 
-class CliTests(unittest.TestCase):
-    def setUp(self):
-        self._root_handlers = logging.getLogger().handlers[:]
+class DeterministicClassificationTests(unittest.TestCase):
+    def test_value_flip_is_conflict(self):
+        a = canonical_tokens("License is MIT-0 for the repo.")
+        b = canonical_tokens("License is Apache-2.0 for the repo.")
+        self.assertEqual(
+            _classify_deterministic(a, b), "conflicting")
 
-    def tearDown(self):
-        logging.getLogger().handlers[:] = self._root_handlers
+    def test_negation_flip_is_conflict(self):
+        a = canonical_tokens("The API requires approval first.")
+        b = canonical_tokens("The API does not require approval first.")
+        self.assertEqual(_classify_deterministic(a, b), "conflicting")
 
-    def _facts(self):
-        return [
-            fact("https://ads.amazon/a", DUP_A, topic_id="approval"),
-            fact("https://docs.example/b", DUP_B, topic_id="approval"),
-        ]
+    def test_reworded_duplicate_is_duplicate(self):
+        a = canonical_tokens("Amazon Ads API supports X.")
+        b = canonical_tokens("X is supported by the Amazon Ads API.")
+        self.assertEqual(_classify_deterministic(a, b), "duplicate")
 
-    def test_cli_reads_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "facts.json"
-            path.write_text(json.dumps(self._facts()), encoding="utf-8")
-            out = io.StringIO()
-            with redirect_stdout(out):
-                code = main([str(path)], llm=fake_llm("duplicate"))
-        self.assertEqual(code, 0)
-        result = json.loads(out.getvalue())
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["resolution"], "duplicate_merged")
+    def test_low_overlap_is_undecided(self):
+        a = canonical_tokens("Approval may take one business day.")
+        b = canonical_tokens("Bulk sheets export campaign statistics.")
+        self.assertIsNone(_classify_deterministic(a, b))
 
-    def test_cli_reads_stdin(self):
-        payload = json.dumps({"facts": self._facts()})
-        out = io.StringIO()
-        with patch("sys.stdin", io.StringIO(payload)), redirect_stdout(out):
-            code = main(["-"], llm=fake_llm("duplicate"))
-        self.assertEqual(code, 0)
-        self.assertEqual(len(json.loads(out.getvalue())), 1)
+    def test_needs_llm_gates_generic_only_pairs(self):
+        a = canonical_tokens("The Amazon Ads API dashboard exists.")
+        b = canonical_tokens("Amazon Ads API fees are standard.")
+        # only generic words shared -> no LLM call
+        self.assertFalse(_needs_llm(a, b))
 
-    def test_cli_invalid_json_exit_2(self):
-        err = io.StringIO()
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "bad.json"
-            path.write_text("{not json", encoding="utf-8")
-            with redirect_stderr(err):
-                code = main([str(path)])
-        self.assertEqual(code, 2)
-        self.assertIn("invalid JSON", err.getvalue())
+    def test_needs_llm_accepts_informative_pairs(self):
+        a = canonical_tokens("Report requests are asynchronous.")
+        b = canonical_tokens("Asynchronous reporting is supported.")
+        self.assertTrue(_needs_llm(a, b))
+
+
+class MergeIntoExistingConceptTests(unittest.TestCase):
+    def test_changed_value_updates_same_concept_and_keeps_loser(self):
+        old = fact("The repository is licensed under MIT-0.", URL2, D1)
+        out1 = merge_facts([old], classify_llm=llm_yes, match_llm=llm_match_no,
+                           today="2026-09-26")
+        concept1 = out1["concepts"][0]
+        existing = existing_concept(concept1["id"], concept1["title"],
+                                    concept1["facts"])
+
+        new = fact("The repository is licensed under Apache-2.0.", URL2, D3)
+        out2 = merge_facts([new], existing={concept1["id"]: existing},
+                           classify_llm=llm_yes, match_llm=llm_match_yes,
+                           today="2026-09-28")
+        concept2 = out2["concepts"][0]
+        self.assertEqual(concept2["id"], concept1["id"])  # SAME concept
+        self.assertEqual(len(concept2["facts"]), 1)
+        winner = concept2["facts"][0]
+        self.assertIn("Apache-2.0", winner["content"])
+        self.assertEqual(winner["resolution"], "conflict_resolved_by_recency")
+        # The MIT-0 fact is retained with provenance, marked superseded.
+        self.assertEqual(len(concept2["conflicts"]), 1)
+        loser = concept2["conflicts"][0]
+        self.assertIn("MIT-0", loser["content"])
+        self.assertEqual(loser["superseded_by"], winner["content"])
+        self.assertEqual(loser["sources"][0]["date"], D1)  # date preserved
+
+    def test_reworded_fact_same_concept_duplicate_merged(self):
+        old = fact("The Amazon Ads API supports asynchronous report requests.",
+                   URL, D1)
+        out1 = merge_facts([old], classify_llm=llm_yes, match_llm=llm_match_no)
+        concept1 = out1["concepts"][0]
+        existing = existing_concept(concept1["id"], concept1["title"],
+                                    concept1["facts"])
+
+        reword = fact("Asynchronous report requests are supported by the "
+                      "Amazon Ads API.", URL2, D3)
+        out2 = merge_facts([reword], existing={concept1["id"]: existing},
+                           classify_llm=llm_yes, match_llm=llm_match_yes)
+        concept2 = out2["concepts"][0]
+        self.assertEqual(concept2["id"], concept1["id"])
+        self.assertEqual(len(concept2["facts"]), 1)
+        self.assertEqual(concept2["facts"][0]["resolution"], "duplicate_merged")
+        urls = {s["url"] for s in concept2["facts"][0]["sources"]}
+        self.assertEqual(urls, {URL, URL2})
+        # Existing wording is kept verbatim — no churn on rewording.
+        self.assertEqual(concept2["facts"][0]["content"], old["content"])
+
+    def test_complementary_facts_coexist_without_joining(self):
+        a = fact("Applications may be submitted by advertisers and partners.",
+                 URL, D1, hint="api-access")
+        b = fact("Approval may take 1 business day.", URL2, D2,
+                 hint="api-access")
+        out = merge_facts([a, b], classify_llm=llm_yes,
+                          match_llm=llm_match_yes)
+        self.assertEqual(len(out["concepts"]), 1)
+        contents = [f["content"] for f in out["concepts"][0]["facts"]]
+        self.assertEqual(sorted(contents), sorted([a["content"], b["content"]]))
+
+    def test_conflict_authority_official_beats_community(self):
+        official = fact("The limit is 100 campaigns.", URL, D1,
+                        source_type="official")
+        community = fact("The limit is 500 campaigns.",
+                         "https://blog.example/limits", D3,
+                         source_type="community")
+        out = merge_facts([official, community],
+                          classify_llm=lambda a, b: "conflicting",
+                          match_llm=llm_match_yes)
+        concept = out["concepts"][0]
+        self.assertEqual(len(concept["facts"]), 1)
+        self.assertIn("100 campaigns", concept["facts"][0]["content"])
+        self.assertEqual(concept["facts"][0]["resolution"],
+                         "conflict_resolved_by_authority")
+        self.assertIn("500 campaigns", concept["conflicts"][0]["content"])
+
+    def test_unresolved_tie_keeps_both(self):
+        a = fact("The limit is 100 campaigns.", URL, D1)
+        b = fact("The limit is 500 campaigns.", URL2, D1)
+        out = merge_facts([a, b],
+                          classify_llm=lambda a, b: "conflicting",
+                          match_llm=llm_match_yes)
+        concept = out["concepts"][0]
+        self.assertEqual(len(concept["facts"]), 2)
+        self.assertTrue(all(f["resolution"] == "unresolved_conflict"
+                            for f in concept["facts"]))
+        self.assertEqual(concept["conflicts"], [])
+
+    def test_five_sources_one_fact_all_provenance(self):
+        facts = [fact("The Amazon Ads API supports asynchronous report "
+                      "requests.", f"https://s{i}.example/x", f"2026-09-2{i}")
+                 for i in range(5)]
+        out = merge_facts(facts,
+                          classify_llm=lambda a, b: "duplicate",
+                          match_llm=llm_match_yes)
+        self.assertEqual(len(out["concepts"]), 1)
+        fact_out = out["concepts"][0]["facts"][0]
+        self.assertEqual(len(fact_out["sources"]), 5)
+        self.assertEqual(fact_out["resolution"], "duplicate_merged")
+        # Corroboration recompute: 5 independent URLs lifts the score.
+        self.assertGreater(fact_out["confidence_score"], 0.6)
+
+    def test_existing_existing_pairs_never_reclassified(self):
+        calls = []
+
+        def spy(a, b):
+            calls.append((a["content"], b["content"]))
+            return "complementary"
+
+        settled_a = "Approval may take 1 business day."
+        settled_b = "Approval may take 5 business days."
+        existing = existing_concept("api-access", "Api Access", [
+            bundle_fact(settled_a, URL, D1),
+            bundle_fact(settled_b, URL2, D1),
+        ])
+        # New value for the same subject: conflicts with BOTH settled facts
+        # (deterministic numeric flips), wins both by recency.
+        new = fact("Approval may take 3 business days.", URL2, D3,
+                   hint="api-access")
+        out = merge_facts([new], existing={"api-access": existing},
+                          classify_llm=spy, match_llm=llm_match_yes)
+        # The settled pair (1 day vs 5 days) is never re-compared — the LLM
+        # seam sees no pair at all (every kept pair was deterministic).
+        self.assertEqual(calls, [])
+        concept = out["concepts"][0]
+        self.assertEqual([f["content"] for f in concept["facts"]],
+                         [new["content"]])
+        self.assertEqual({c["content"] for c in concept["conflicts"]},
+                         {settled_a, settled_b})
+
+    def test_llm_label_error_keeps_facts_separate(self):
+        def broken(a, b):
+            raise LlmError("LLM returned invalid JSON")
+
+        a = fact("Report requests are asynchronous everywhere.")
+        b = fact("Asynchronous reporting is supported at scale.")
+        out = merge_facts([a, b], classify_llm=broken, match_llm=llm_match_no)
+        self.assertEqual(len(out["concepts"]), 2)
 
 
 if __name__ == "__main__":

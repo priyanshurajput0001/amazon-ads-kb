@@ -29,7 +29,8 @@ already be cached by the Fetcher and its verdict must be `new` or
 2. Claude returns a list of **claims**, each with:
    * `claim` — the fact in one sentence
    * `quote` — the exact supporting words, copied word-for-word from the page
-   * `topic_hint` — a suggested topic name (advisory only)
+   * `topic_hint` — a suggested concept slug (advisory; the concept
+     layer uses it as one matching signal)
    * `confidence` — how clearly the page states it (low/medium/high)
 3. Deterministic Python then **verifies** the answer before saving: every
    field present, and every quote found verbatim in the saved page.

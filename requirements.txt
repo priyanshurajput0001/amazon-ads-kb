@@ -1,0 +1,13 @@
+# Python dependencies for the Amazon Ads knowledge pipeline.
+#
+# The pipeline (pipeline/) deliberately uses ONLY the Python standard
+# library — no third-party packages are required or installed. This file
+# exists so `pip install -r requirements.txt` is a valid, no-op
+# verification of that fact in a fresh clone.
+#
+# External tools the pipeline shells out to (installed separately, see
+# README.md "Prerequisites"):
+#   - claude   (Claude Code CLI)  — the three LLM seams
+#   - tvly     (Tavily CLI)       — web extraction during Fetch (optional
+#                                   but recommended; a direct HTTP fallback
+#                                   exists)

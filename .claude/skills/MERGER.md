@@ -1,74 +1,90 @@
 # Merger
 
 > Reference documentation for the Merge stage — not a runnable agent. The
-> code lives in `pipeline/merger.py`.
+> code lives in `pipeline/merger.py`, the concept layer it builds on in
+> `pipeline/concepts.py`.
 
 ## Purpose
 
-When two facts discuss the same topic, they may repeat each other,
-contradict each other, or add different details. The Merger produces one
-clean fact per piece of knowledge. It is the second of the two AI-assisted
-stages: Claude judges the *relationship*, fixed rules decide the *outcome*.
+The Merger folds newly validated facts into the knowledge base's CONCEPTS.
+It is where the maintained bundle participates in maintenance: new facts
+are matched against the existing concept documents, so a source that
+rewords or changes a value updates the concept it already belongs to
+instead of spawning a duplicate. Claude judges the fuzzy relationships;
+fixed rules decide every outcome.
 
 ## When To Use
 
 Refer to this document when explaining duplicates, conflicts and who won,
-`complementary_merge`, `unresolved_conflict`, or why two similar sentences
-became one document.
+concept identity, `complementary_merge`, `unresolved_conflict`, or how a
+changed source value ends up in the same document as the old one.
 
 ## Input
 
-The Validator's surviving facts (valid and valid_low_confidence), grouped
-by topic. Rejected facts pass straight through, untouched.
+The Validator's surviving facts (valid and valid_low_confidence) plus the
+existing bundle loaded from `knowledge/`. Rejected facts pass straight
+through, untouched.
 
 ## Process
 
-1. For every pair of facts in the same topic group, **Claude answers one
-   question only** — how are these two related?
-   * `duplicate` — same claim, different wording
-   * `conflicting` — same subject, contradictory values or information
-   * `complementary` — same subject, different non-conflicting details
-2. **Deterministic rules** then act on the label:
+1. **Concept assignment** (`pipeline/concepts.py`): every new fact is
+   matched against the existing concepts (and the other new facts):
+   * near-identical wording (token-set agreement ≥ 0.8) adopts the existing
+     concept deterministically — no AI call;
+   * clearly unrelated wording (< 0.30 overlap) starts a new concept;
+   * the ambiguous band in between is decided by a one-shot Claude call
+     ("same concept?") — candidates are found by deterministic overlap
+     first, so the whole bundle is never sent to the model.
+2. **Within each concept**, pairs involving a new fact are classified:
+   * deterministic tripwires first — a negation or numeric flip at ≥ 0.5
+     overlap is a conflict; ≥ 0.8 overlap is a duplicate;
+   * plausible-but-undecided pairs go to the Claude seam
+     (duplicate | conflicting | complementary);
+   * pairs sharing no informative words simply coexist.
+3. **Deterministic rules** then act on the labels:
    * duplicates → collapse into one fact: one original sentence kept
-     word-for-word, all contributing sources attached, strongest score kept
-   * complementary → join both sentences word-for-word; skipped if any pair
-     between the two sides is conflicting
-   * conflicting → a fixed-priority duel: **authority** (official beats
-     community, regardless of numbers) → **recency** (newer source date) →
-     **majority** (more independent URLs). Loser dropped with a logged
-     reason; a complete tie keeps **both** versions as `unresolved_conflict`.
-3. Every outcome is labeled (`duplicate_merged`,
-   `conflict_resolved_by_authority`, `complementary_merge`, ...) so the
-   decision stays visible downstream.
+     word-for-word (an existing fact's wording preferred, so rewording
+     never churns documents), all contributing sources attached, trust
+     recomputed with the Validator's corroboration arithmetic;
+   * complementary → the facts coexist in the concept as separate facts
+     (sentences are never space-joined into run-on hybrids);
+   * conflicting → the fixed-priority duel: **authority** (official beats
+     community) → **recency** (newer source date) → **majority** (more
+     independent URLs). The LOSING fact is retained in the concept's
+     Conflicts section with its provenance, the rule, and what superseded
+     it — never silently dropped. A complete tie keeps **both** facts
+     current, each stamped `unresolved_conflict`.
 
 ## Rules
 
-* Claude only classifies the relationship — it never picks winners and
-  never writes merged text.
+* Claude only classifies relationships and concept matches — it never picks
+  winners and never writes merged text.
 * Original sentences are never paraphrased; nothing is invented.
 * Community majorities never outvote an official source.
+* Contradictory information is never erased: it is surfaced, dated, and
+  attributed.
 
 ## Output
 
-The final fact list — one fact per piece of knowledge with all sources —
-ready for the Publisher.
+Concept records — id, title, current facts with full provenance, retained
+conflicts — one per concept, ready for the Publisher.
 
 ## Failure Behavior
 
-An unreadable or invalid Claude label → the pair is reported and both facts
-are kept separate (never a guessed relationship). Rejected facts are never
-merged or deleted.
+An unreadable or invalid Claude answer → that pair (or match) is reported
+and the facts stay separate (never a guessed relationship). Rejected facts
+are never merged or deleted.
 
 ## Example
 
-"The new Amazon Ads reporting API is in open beta." + "...offers
-multi-dimensional, cross-account reporting." → Claude: `complementary` →
-rules join both sentences into one fact with both sources. Two official
-pages disagreeing ("1 business day" vs "5 business days") → Claude:
-`conflicting` → rules resolve by recency/majority, or keep both if tied.
+A GitHub page changes "licensed under MIT-0" to "licensed under
+Apache-2.0": the new fact matches the license CONCEPT (same subject),
+conflicts with the old fact, loses nothing — the newer value becomes
+current, the MIT-0 fact moves to Conflicts with its original date and
+`superseded_by` pointing at the new value.
 
 ## Implementation
 
-`pipeline/merger.py` — the Claude seam (`claude_cli_classify`) for
-classification only; clustering, conflict precedence, and combination are
-deterministic (`merge_facts`).
+`pipeline/merger.py` (`merge_facts`) with `pipeline/concepts.py`
+(`assign_concepts`); Claude seams: `claude_cli_classify`,
+`claude_cli_concept_match`.

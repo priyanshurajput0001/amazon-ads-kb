@@ -16,8 +16,14 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 CONFIDENCE_LEVELS = ("low", "medium", "high")
 STATUSES = ("official", "community", "inferred")
 
+# OKF v0.1 requires every document to declare its `type`. The bundle contains
+# exactly one kind of document today — concept documents — so the enum has one
+# value; widening it is a schema decision, not a per-document choice.
+DOC_TYPES = ("concept",)
+
 # Keys in canonical output order. `sources` is a list; everything else scalar.
-KEY_ORDER = ("id", "title", "sources", "confidence", "status", "last_checked")
+KEY_ORDER = ("id", "title", "type", "sources", "confidence", "status",
+             "last_checked")
 
 REQUIRED = set(KEY_ORDER)
 
@@ -79,6 +85,9 @@ def validate(meta: dict, path: Path | None = None) -> None:
 
     if not (isinstance(meta["id"], str) and SLUG_RE.fullmatch(meta["id"])):
         raise _fail(path, f"id must match {SLUG_RE.pattern}, got {meta['id']!r}")
+
+    if meta["type"] not in DOC_TYPES:
+        raise _fail(path, f"type must be one of {DOC_TYPES}, got {meta['type']!r}")
 
     sources = meta["sources"]
     if not isinstance(sources, list) or not sources:

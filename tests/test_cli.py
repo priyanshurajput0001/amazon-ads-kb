@@ -7,8 +7,10 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 from pipeline.fetch import main
+import pipeline.fetch as pipeline_fetch
 
 T0 = "2026-09-26T12:00:00+00:00"
 T1 = "2026-09-26T13:00:00+00:00"
@@ -59,11 +61,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(row["sha256"], ok_result("https://a", "hello", T0)["sha256"])
         self.assertIsNone(row["error"])
 
-    def test_second_identical_fetch_is_unchanged(self):
-        self.run_cli(["https://a"], [ok_result("https://a", "hello", T0)])
+    def test_standalone_fetch_stages_pending_not_committed(self):
+        # Two-phase commit: the fetch CLI alone never commits a new hash —
+        # the orchestrator does, after publication succeeds. Re-fetching the
+        # same content therefore reports "new" again until then.
+        code, rows = self.run_cli(["https://a"], [ok_result("https://a", "hello", T0)])
+        self.assertEqual(rows[0]["verdict"], "new")
+        self.assertFalse(rows[0]["committed"])
         code, rows = self.run_cli(["https://a"], [ok_result("https://a", "hello", T1)])
-        self.assertEqual(code, 0)
+        self.assertEqual(rows[0]["verdict"], "new")
+        self.assertFalse(rows[0]["committed"])
+
+    def test_unchanged_after_explicit_commit(self):
+        from pipeline.state import commit_state
+        self.run_cli(["https://a"], [ok_result("https://a", "hello", T0)])
+        commit_state(self.state_path)
+        code, rows = self.run_cli(["https://a"], [ok_result("https://a", "hello", T1)])
         self.assertEqual(rows[0]["verdict"], "unchanged")
+        self.assertTrue(rows[0]["committed"])
 
     def test_failed_url_is_reported_not_fatal(self):
         batch = [{"url": "https://bad", "ok": False,
@@ -80,6 +95,50 @@ class CliTests(unittest.TestCase):
         code, rows = self.run_cli(["https://a", "https://b"], batch)
         self.assertEqual(code, 0)
         self.assertEqual([r["url"] for r in rows], ["https://a", "https://b"])
+
+
+class DirectContentTypeTests(unittest.TestCase):
+    """Concrete bug exposed by the Phase-2 pre-check (2026-09-29): a direct
+    fetch of a raw text/plain markdown file was mislabeled html and refused
+    at Fetch. Plain-text bodies ARE the readable content."""
+
+    @staticmethod
+    def _fake_response(content: bytes, content_type: str):
+        from unittest.mock import MagicMock
+        resp = MagicMock()
+        resp.__enter__.return_value = resp   # usable as a context manager
+        resp.__exit__.return_value = False
+        resp.headers.get_content_charset.return_value = "utf-8"
+        resp.headers.get_content_type.return_value = content_type
+        resp.read.return_value = content
+        return resp
+
+    def test_plain_text_body_is_markdown(self):
+        with patch("urllib.request.urlopen",
+                   return_value=self._fake_response(b"# readme\n\nhello",
+                                                    "text/plain")):
+            result = pipeline_fetch._direct("https://raw.example/file.md",
+                                            "2026-09-29T00:00:00+00:00")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.content_type, "markdown")
+        self.assertEqual(result.strategy, "direct")
+
+    def test_text_markdown_body_is_markdown(self):
+        with patch("urllib.request.urlopen",
+                   return_value=self._fake_response(b"readme", "text/markdown")):
+            result = pipeline_fetch._direct("https://raw.example/file.md",
+                                            "2026-09-29T00:00:00+00:00")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.content_type, "markdown")
+
+    def test_html_page_still_labeled_html(self):
+        with patch("urllib.request.urlopen",
+                   return_value=self._fake_response(b"<html><body>x</body>",
+                                                    "text/html")):
+            result = pipeline_fetch._direct("https://example.com/page",
+                                            "2026-09-29T00:00:00+00:00")
+        self.assertIsNotNone(result)
+        self.assertEqual(result.content_type, "html")
 
 
 if __name__ == "__main__":

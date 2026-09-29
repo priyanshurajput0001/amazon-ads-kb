@@ -1,408 +1,327 @@
-"""Tests for pipeline.publisher — offline, fully deterministic (fixed clocks)."""
+"""Tests for pipeline.publisher — offline, temp knowledge dirs, fake clock.
 
-import io
-import json
-import logging
+Covers the concept-document contract (review Parts 1, 6, 8):
+  - OKF output with a valid `type`
+  - stable identity: filename == id, updates in place, no duplicates
+  - per-fact provenance, dates, confidence/status, resolution preserved
+  - conflicts surfaced, never erased
+  - INDEX/CHANGELOG consistent with the documents, atomically batched
+  - idempotency: unchanged concepts are not rewritten at all
+"""
+
+import datetime
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-import pipeline.publisher as pub
 from pipeline import okf
 from pipeline.publisher import (
     PublisherError,
-    build_document,
-    fact_id,
-    main,
-    publish_facts,
-    readable_slug,
+    confidence_level,
+    publish_concepts,
 )
 
-NOW = datetime(2026, 9, 27, 12, 0, 0, tzinfo=timezone.utc)
-NOW2 = NOW + timedelta(hours=2)
+NOW = datetime.datetime(2026, 9, 27, 12, 0, 0, tzinfo=datetime.timezone.utc)
+NOW2 = datetime.datetime(2026, 9, 28, 9, 0, 0, tzinfo=datetime.timezone.utc)
+TODAY = "2026-09-27"
+
+URL = "https://advertising.amazon.com/API/docs/en-us/test"
+URL2 = "https://github.com/amzn/some-repo"
 
 
-def fact(content="The Amazon Ads MCP server is in open beta.", **over):
+def src(url=URL, date="2026-09-26T05:00:00+00:00", source_type="official"):
+    return {"url": url, "date": date, "source_type": source_type}
+
+
+def cfact(content, sources=None, score=0.7, resolution="single_source",
+          first_seen="2026-09-26", status="valid", **extra):
     base = {
         "content": content,
-        "sources": [{"url": "https://advertising.amazon.com/API/docs/en-us",
-                     "date": "2026-09-26T00:00:00+00:00", "source_type": "official"}],
-        "confidence_score": 0.6,
-        "resolution": "single_source",
-        "status": "valid",
+        "confidence_score": score,
+        "status": status,
+        "resolution": resolution,
+        "first_seen": first_seen,
+        "sources": sources or [src()],
     }
-    base.update(over)
+    base.update(extra)
     return base
+
+
+def concept(cid, facts, conflicts=(), title=None):
+    return {"id": cid, "title": title, "type": "concept",
+            "facts": list(facts), "conflicts": list(conflicts)}
+
+
+def merged(concepts_, rejected=()):
+    return {"concepts": list(concepts_), "rejected": list(rejected)}
 
 
 class PublisherTestCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.kdir = Path(self._tmp.name)
+        self.kdir = Path(self._tmp.name) / "knowledge"
 
     def tearDown(self):
         self._tmp.cleanup()
 
-    def publish(self, facts, now=NOW):
-        return publish_facts(facts, knowledge_dir=self.kdir, now=now)
+    def publish(self, data, now=NOW):
+        return publish_concepts(data, knowledge_dir=self.kdir, now=now)
 
-    def path_for(self, f):
-        """Expected path for a NEW fact (no collision)."""
-        return self.kdir / f"{readable_slug(pub._slug_base(f))}.md"
-
-    def doc_files(self):
-        return sorted(p for p in self.kdir.glob("*.md")
-                      if p.name not in ("INDEX.md", "CHANGELOG.md"))
+    def snapshot(self):
+        return {str(p): p.read_bytes()
+                for p in sorted(self.kdir.glob("*.md"))}
 
 
-class SlugTests(unittest.TestCase):
-    def test_readable_kebab_slug(self):
-        self.assertEqual(readable_slug("The new Amazon Ads reporting API is in open beta."),
-                         "new-amazon-ads-reporting-api-open-beta")
+class DocumentContractTests(PublisherTestCase):
+    def test_published_document_is_valid_okf_with_type(self):
+        self.publish(merged([concept("api-access", [
+            cfact("Approval may take 1 business day.")])]))
+        text = (self.kdir / "api-access.md").read_text(encoding="utf-8")
+        meta, body = okf.parse(text)
+        self.assertEqual(meta["type"], "concept")
+        self.assertEqual(meta["id"], "api-access")
+        self.assertEqual(meta["title"], "API Access")
+        self.assertEqual(meta["status"], "official")
+        self.assertEqual(meta["confidence"], "high")
+        self.assertIn("type: concept", text)
 
-    def test_special_characters_and_case_normalized(self):
-        self.assertEqual(readable_slug("Sponsored Brands/Video: A/B & C++ (2026)!"),
-                         "sponsored-brands-video-b-c-2026")
-        self.assertEqual(readable_slug("  Multiple   spaces\tand\ntabs  "),
-                         "multiple-spaces-tabs")
+    def test_filename_is_the_stable_id(self):
+        self.publish(merged([concept("sponsored-products-overview", [
+            cfact("Sponsored Products uses cost-per-click billing.")])]))
+        self.assertTrue((self.kdir / "sponsored-products-overview.md").exists())
 
-    def test_slug_capped_on_word_boundary(self):
-        slug = readable_slug("word " * 40)
-        self.assertLessEqual(len(slug), pub.SLUG_MAX)
-        self.assertFalse(slug.startswith("-") or slug.endswith("-"))
+    def test_confidence_is_the_weakest_fact_band(self):
+        self.publish(merged([concept("mixed", [
+            cfact("Solid fact.", score=0.9),
+            cfact("Shaky fact.", score=0.4, status="valid_low_confidence"),
+        ])]))
+        meta, _ = okf.parse((self.kdir / "mixed.md").read_text())
+        self.assertEqual(meta["confidence"], "medium")
 
-    def test_slug_deterministic(self):
-        self.assertEqual(readable_slug("Same input."), readable_slug("Same input."))
+    def test_status_community_without_official_sources(self):
+        self.publish(merged([concept("community-topic", [
+            cfact("A community claim.",
+                  sources=[src(url="https://blog.example/x",
+                               source_type="community")])])]))
+        meta, _ = okf.parse((self.kdir / "community-topic.md").read_text())
+        self.assertEqual(meta["status"], "community")
 
-    def test_all_stopwords_falls_back(self):
-        self.assertEqual(readable_slug("The of and"), "fact")
+    def test_fact_provenance_rendered_and_reparsable(self):
+        self.publish(merged([concept("api-access", [
+            cfact("Approval may take 1 business day.",
+                  sources=[src(), src(url=URL2, date="2026-09-27T01:00:00+00:00")],
+                  resolution="duplicate_merged")])]))
+        text = (self.kdir / "api-access.md").read_text()
+        self.assertIn("- Approval may take 1 business day.", text)
+        self.assertIn("resolution: duplicate_merged", text)
+        self.assertIn("first_seen: 2026-09-26", text)
+        self.assertIn(f"{URL} (official, fetched 2026-09-26T05:00:00+00:00)", text)
 
-    def test_topic_id_preferred_over_content(self):
-        f = fact(topic_id="amazon-ads-reporting-api")
-        self.assertEqual(pub._slug_base(f), "amazon-ads-reporting-api")
+        from pipeline.concepts import load_bundle
+        bundle = load_bundle(self.kdir)
+        fact = bundle["api-access"]["facts"][0]
+        self.assertEqual(fact["content"], "Approval may take 1 business day.")
+        self.assertEqual(len(fact["sources"]), 2)
 
+    def test_conflicts_section_surfaces_superseded_fact(self):
+        self.publish(merged([concept("license", [
+            cfact("The repository is licensed under Apache-2.0.",
+                  resolution="conflict_resolved_by_recency")],
+            conflicts=[cfact("The repository is licensed under MIT-0.",
+                             resolution="conflict_resolved_by_recency",
+                             superseded_by="The repository is licensed under Apache-2.0.")])]))
+        text = (self.kdir / "license.md").read_text()
+        self.assertIn("### Conflicts", text)
+        self.assertIn("MIT-0", text)
+        self.assertIn("superseded_by: The repository is licensed under Apache-2.0.",
+                      text)
+        from pipeline.concepts import load_bundle
+        bundle = load_bundle(self.kdir)
+        self.assertEqual(len(bundle["license"]["conflicts"]), 1)
 
-class PublishTests(PublisherTestCase):
-    def test_single_valid_fact_publishes(self):
-        report = self.publish([fact()])
-        self.assertEqual((report["published"], report["updated"],
-                          report["unchanged"], report["skipped"]), (1, 0, 0, 0))
-        path = self.path_for(fact())
-        self.assertTrue(path.exists())
-        self.assertEqual(report["documents"], [str(path)])
+    def test_duplicate_ids_rejected(self):
+        with self.assertRaises(PublisherError):
+            self.publish(merged([
+                concept("dup", [cfact("one")]),
+                concept("dup", [cfact("two")])]))
+        self.assertEqual(self.snapshot(), {})  # nothing written
 
-    def test_multiple_facts_publish(self):
-        facts = [fact("Fact one about reporting."),
-                 fact("Fact two about onboarding.", resolution="complementary_merge")]
-        report = self.publish(facts)
-        self.assertEqual(report["published"], 2)
-        self.assertEqual(len(report["documents"]), 2)
-        self.assertEqual(len(self.doc_files()), 2)
-
-    def test_valid_low_confidence_publishes(self):
-        f = fact(status="valid_low_confidence", confidence_score=0.3,
-                 sources=[{"url": "https://forum.example/t", "date": None,
-                           "source_type": "community"}])
-        self.publish([f])
-        self.assertIn("valid_low_confidence", self.path_for(f).read_text())
-
-    def test_rejected_fact_skipped_not_published(self):
-        rejected = {"url": "https://x/", "content": "Rumor.", "status": "rejected",
-                    "reason": "unsupported"}
-        report = self.publish([fact(), rejected])
-        self.assertEqual((report["published"], report["skipped"]), (1, 1))
-        self.assertEqual(self.doc_files(), [self.path_for(fact())])
-
-    def test_malformed_facts_rejected_without_writes(self):
-        for bad in [
-            "not-a-dict",
-            fact(content="   "),
-            fact(content="two\nlines"),
-            {**fact(), "sources": []},
-            {**fact(), "sources": [{"url": "", "source_type": "official"}]},
-            {**fact(), "sources": [{"url": "https://x/", "source_type": "blog"}]},
-            {**fact(), "confidence_score": "high"},
-            {**fact(), "confidence_score": 1.5},
-            {**fact(), "resolution": "magic"},
-            {k: v for k, v in fact().items() if k != "status"},
-        ]:
-            with self.assertRaises(PublisherError, msg=repr(bad)[:60]):
-                self.publish([bad])
-        self.assertEqual(self.doc_files(), [])  # nothing written
-
-
-class IdentityAndCollisionTests(PublisherTestCase):
-    def test_identity_is_content_hash_not_filename(self):
-        f = fact()
-        self.publish([f])
-        meta, _ = okf.parse(self.path_for(f).read_text())
-        self.assertEqual(meta["id"], fact_id(f["content"]))
-        self.assertRegex(meta["id"], r"^kb-[0-9a-f]{16}$")
-        self.assertNotIn("kb-", self.path_for(f).stem)  # filename is readable
-
-    def test_colliding_slugs_never_overwrite(self):
-        prefix = "alpha beta gamma delta epsilon zeta eta theta iota kappa " \
-                 "lambda mu nu xi omicron pi rho sigma tau "
-        a = fact(prefix + "first variant")
-        b = fact(prefix + "second variant")  # same slug prefix after capping
-        report = self.publish([a, b])
-        self.assertEqual(report["published"], 2)
-        self.assertEqual(len(self.doc_files()), 2)  # both survived
-        texts = {p.read_text() for p in self.doc_files()}
-        self.assertEqual(len(texts), 2)  # contents differ, no silent overwrite
-
-    def test_collision_suffix_derived_from_stable_id(self):
-        prefix = "alpha beta gamma delta epsilon zeta eta theta iota kappa " \
-                 "lambda mu nu xi omicron pi rho sigma tau "
-        b = fact(prefix + "second variant")
-        self.publish([fact(prefix + "first variant"), b])
-        stable = fact_id(b["content"])
-        self.assertTrue(
-            any(p.stem == f"{readable_slug(prefix)}-{stable[-6:]}"
-                for p in self.doc_files()),
-            [p.stem for p in self.doc_files()])
-
-    def test_duplicate_facts_in_one_batch_single_document(self):
-        f = fact()
-        report = self.publish([f, dict(f)])
-        self.assertEqual((report["published"], report["unchanged"]), (1, 1))
-        self.assertEqual(len(self.doc_files()), 1)
-
-    def test_existing_document_updated_in_place_same_filename(self):
-        self.publish([fact()])
-        path_before = self.path_for(fact())
-        grown = fact(sources=[
-            {"url": "https://advertising.amazon.com/API/docs/en-us",
-             "date": "2026-09-26T00:00:00+00:00", "source_type": "official"},
-            {"url": "https://advertising.amazon.com/about-api",
-             "date": "2026-09-27T00:00:00+00:00", "source_type": "official"}])
-        report = self.publish([grown], now=NOW2)
-        self.assertEqual((report["updated"], report["published"]), (1, 0))
-        self.assertTrue(path_before.exists())           # same file, updated
-        self.assertEqual(len(self.doc_files()), 1)      # no duplicate
-        self.assertIn("https://advertising.amazon.com/about-api",
-                      path_before.read_text())
+    def test_malformed_fact_rejected_before_writes(self):
+        with self.assertRaises(PublisherError):
+            self.publish(merged([concept("bad", [
+                {"content": "no score", "sources": [src()]}])]))
+        self.assertFalse(self.kdir.exists() and any(self.kdir.iterdir()))
 
 
 class IdempotencyTests(PublisherTestCase):
-    def test_second_identical_run_reports_unchanged(self):
-        first = self.publish([fact()])
-        second = self.publish([fact()])
-        self.assertEqual((first["published"], first["unchanged"]), (1, 0))
-        self.assertEqual((second["published"], second["updated"],
-                          second["unchanged"], second["renamed"]), (0, 0, 1, 0))
+    def test_republish_identical_input_is_unchanged_and_byte_identical(self):
+        data = merged([concept("api-access", [
+            cfact("Approval may take 1 business day.")])])
+        first = self.publish(data)
+        before = self.snapshot()
+        second = self.publish(data, now=NOW2)  # different clock!
+        self.assertEqual(second["unchanged"], 1)
+        self.assertEqual(second["published"], 0)
+        self.assertEqual(second["updated"], 0)
+        self.assertEqual(self.snapshot(), before)  # byte-identical, no rewrite
+        self.assertEqual(first["updated"], 0)
 
-    def test_documents_identical_despite_different_last_run(self):
-        self.publish([fact()], now=NOW)
-        text1 = self.path_for(fact()).read_text()
-        self.publish([fact()], now=NOW2)
-        text2 = self.path_for(fact()).read_text()
-        self.assertEqual(text1, text2)
+    def test_last_checked_bumped_only_on_real_change(self):
+        data = merged([concept("api-access", [
+            cfact("Approval may take 1 business day.")])])
+        self.publish(data)
+        meta1, _ = okf.parse((self.kdir / "api-access.md").read_text())
+        changed = merged([concept("api-access", [
+            cfact("Approval may take 1 business day."),
+            cfact("Applications may be submitted by advertisers and partners.",
+                  sources=[src(date="2026-09-28T05:00:00+00:00")]),
+        ])])
+        report = self.publish(changed, now=NOW2)
+        meta2, _ = okf.parse((self.kdir / "api-access.md").read_text())
+        self.assertEqual(report["updated"], 1)
+        self.assertEqual(meta1["last_checked"], "2026-09-27")
+        self.assertEqual(meta2["last_checked"], "2026-09-28")
+        self.assertEqual(meta2["id"], meta1["id"])  # same concept updated
 
-    def test_different_last_run_values_in_report(self):
-        r1 = self.publish([fact()], now=NOW)
-        r2 = self.publish([fact()], now=NOW2)
-        self.assertNotEqual(r1["last_run"], r2["last_run"])
-        for r in (r1, r2):
-            self.assertRegex(r["last_run"], r"\+00:00$")
+    def test_update_in_place_never_creates_second_document(self):
+        data = merged([concept("api-access", [
+            cfact("Approval may take 1 business day.")])])
+        self.publish(data)
+        grown = merged([concept("api-access", [
+            cfact("Approval may take 1 business day."),
+            cfact("Applications may be submitted by advertisers and partners.")])])
+        self.publish(grown, now=NOW2)
+        docs = [p for p in self.kdir.glob("*.md")
+                if p.name not in ("INDEX.md", "CHANGELOG.md")]
+        self.assertEqual([p.name for p in docs], ["api-access.md"])
 
-    def test_index_and_changelog_stable_on_identical_rerun(self):
-        self.publish([fact()])
-        index1 = (self.kdir / "INDEX.md").read_text()
-        changelog1 = (self.kdir / "CHANGELOG.md").read_text()
-        r2 = self.publish([fact()], now=NOW2)
-        self.assertFalse(r2["index_updated"])
-        self.assertEqual((self.kdir / "INDEX.md").read_text(), index1)
-        self.assertEqual((self.kdir / "CHANGELOG.md").read_text(), changelog1)
 
-    def test_unrelated_documents_untouched(self):
-        unrelated = self.kdir / "amazon-ads-api-overview.md"
-        unrelated.write_text("---\nid: amazon-ads-api-overview\n"
-                             "title: Old\nsources:\n  - https://x/used-before\n"
-                             "confidence: high\nstatus: official\n"
-                             "last_checked: 2026-01-01\n---\n\nbody\n",
-                             encoding="utf-8")
-        self.publish([fact()])
-        self.assertIn("body", unrelated.read_text())  # byte-identical content
+class IndexChangelogTests(PublisherTestCase):
+    def test_index_lists_every_document_exactly_once(self):
+        self.publish(merged([
+            concept("api-access", [cfact("Approval may take 1 business day.")]),
+            concept("reporting", [cfact("The API supports asynchronous reports.")]),
+        ]))
         index = (self.kdir / "INDEX.md").read_text()
-        self.assertIn("[amazon-ads-api-overview](./amazon-ads-api-overview.md)",
-                      index)  # row preserved with its own filename
-        self.assertEqual(len([l for l in index.splitlines()
-                              if l.startswith("| [")]), 2)
+        self.assertIn("[api-access](./api-access.md)", index)
+        self.assertIn("[reporting](./reporting.md)", index)
+        self.assertEqual(index.count("./api-access.md"), 1)
+
+    def test_changelog_records_created_and_updated(self):
+        data = merged([concept("api-access", [cfact("Approval may take 1 day.")])])
+        self.publish(data)
+        self.publish(merged([concept("api-access", [
+            cfact("Approval may take 1 day."),
+            cfact("Applications may be submitted by advertisers.")])]),
+            now=NOW2)
+        log = (self.kdir / "CHANGELOG.md").read_text()
+        self.assertIn("## 2026-09-27", log)
+        self.assertIn("## 2026-09-28", log)
+        self.assertIn("**api-access** — created.", log)
+        self.assertIn("**api-access** — updated.", log)
+
+    def test_rejected_facts_are_skipped_and_counted(self):
+        report = self.publish(merged(
+            [concept("ok", [cfact("fine")])],
+            rejected=[{"content": "bad", "status": "rejected"}]))
+        self.assertEqual(report["skipped"], 1)
+        self.assertTrue((self.kdir / "ok.md").exists())
+
+    def test_index_unchanged_documents_kept_without_rewrite(self):
+        self.publish(merged([concept("api-access", [cfact("Approval may take 1 day.")])]))
+        before_index = (self.kdir / "INDEX.md").read_bytes()
+        self.publish(merged([concept("reporting", [cfact("Async reports.")] )]),
+                     now=NOW2)
+        after_index = (self.kdir / "INDEX.md").read_bytes()
+        self.assertNotEqual(before_index, after_index)  # new row added
 
 
-class IndexTests(PublisherTestCase):
-    def test_index_links_readable_filenames(self):
-        f = fact()
-        self.publish([f])
-        index = (self.kdir / "INDEX.md").read_text()
-        stem = self.path_for(f).stem
-        self.assertIn(f"| [{stem}](./{stem}.md) |", index)
+class RelatedLinksTests(PublisherTestCase):
+    def test_related_links_only_with_shared_source_and_overlap(self):
+        facts_a = [cfact("The reporting API offers asynchronous report requests.")]
+        facts_b = [cfact("Asynchronous report requests are supported.",
+                         sources=[src()])]
+        facts_c = [cfact("Bulk sheets export campaign statistics.",
+                         sources=[src(url="https://other.example/z")])]
+        self.publish(merged([
+            concept("reporting-api", facts_a),
+            concept("async-reports", facts_b),
+            concept("bulk-sheets", facts_c),
+        ]))
+        text_a = (self.kdir / "reporting-api.md").read_text()
+        self.assertIn("[Async Reports](./async-reports.md)", text_a)
+        self.assertNotIn("bulk-sheets", text_a)  # no shared source -> no link
 
-    def test_index_follows_migration(self):
-        f = fact()
-        legacy = self.kdir / f"{fact_id(f['content'])}.md"
-        legacy.write_text(build_document(f, "2026-09-26"), encoding="utf-8")
-        self.publish([f])
-        index = (self.kdir / "INDEX.md").read_text()
-        self.assertNotIn(fact_id(f["content"]) + ".md", index)  # old link gone
-        self.assertIn(f"(./{self.path_for(f).stem}.md)", index)  # new link
+    def test_no_related_section_when_nothing_justified(self):
+        self.publish(merged([concept("solo", [
+            cfact("An isolated claim.",
+                  sources=[src(url="https://only.example/s")])])]))
+        self.assertNotIn("## Related",
+                         (self.kdir / "solo.md").read_text())
 
-
-class MigrationTests(PublisherTestCase):
-    def test_legacy_kb_file_migrated_to_readable_name(self):
-        f = fact()
-        stable = fact_id(f["content"])
-        legacy = self.kdir / f"{stable}.md"
-        legacy.write_text(build_document(f, "2026-09-26"), encoding="utf-8")
-        before = legacy.read_text()
-        report = self.publish([f])
-        self.assertFalse(legacy.exists())                 # old name gone
-        new_path = self.path_for(f)
-        self.assertTrue(new_path.exists())                # readable name present
-        self.assertEqual(new_path.read_text().replace("last_checked: 2026-09-27",
-                                                      "last_checked: 2026-09-26"),
-                         before.replace("last_checked: 2026-09-26",
-                                        "last_checked: 2026-09-26"))
-        self.assertEqual(report["renamed"], 1)
-        self.assertEqual((report["published"], report["updated"],
-                          report["unchanged"]), (0, 0, 1))  # content untouched
-
-    def test_legacy_file_migrated_even_when_not_in_input(self):
-        f = fact("Amazon Marketing Stream provides hourly metrics.")
-        legacy = self.kdir / f"{fact_id(f['content'])}.md"
-        legacy.write_text(build_document(f, "2026-09-26"), encoding="utf-8")
-        report = self.publish([fact()])  # different fact entirely
-        self.assertEqual(report["renamed"], 1)
-        self.assertFalse(legacy.exists())
-        self.assertTrue(self.path_for(f).exists())
-
-    def test_non_legacy_handwritten_docs_not_renamed(self):
-        doc = self.kdir / "amazon-ads-api-overview.md"
-        text = ("---\nid: amazon-ads-api-overview\ntitle: T\n"
-                "sources:\n  - https://x/\nconfidence: high\nstatus: official\n"
-                "last_checked: 2026-01-01\n---\n\nbody\n")
-        doc.write_text(text, encoding="utf-8")
-        self.publish([fact()])
-        self.assertEqual(doc.read_text(), text)  # untouched, same filename
-
-
-class PreservationTests(PublisherTestCase):
-    def setUp(self):
-        super().setUp()
-        self.content = ("Export APIs provide campaign management information in a "
-                        "common model and format across sponsored ads products.")
-        self.f = fact(self.content, confidence_score=0.7,
-                      resolution="complementary_merge", sources=[
-                          {"url": "https://b.example/", "date": "2026-09-26T00:00:00+00:00",
-                           "source_type": "community"},
-                          {"url": "https://a.example/", "date": None,
-                           "source_type": "official"}])
-        self.publish([self.f])
-        self.text = self.path_for(self.f).read_text()
-        self.meta, self.body = okf.parse(self.text)
-
-    def test_content_preserved_verbatim(self):
-        self.assertEqual(self.meta["title"], self.content)
-        self.assertIn(f"\n{self.content}\n", self.body)
-
-    def test_all_source_metadata_preserved(self):
-        self.assertEqual(self.meta["sources"], ["https://a.example/",
-                                                "https://b.example/"])
-        self.assertIn("- https://a.example/ — official, fetched unknown", self.body)
-        self.assertIn("- https://b.example/ — community, fetched 2026-09-26T00:00:00+00:00",
-                      self.body)
-
-    def test_confidence_score_and_level_preserved(self):
-        self.assertEqual(self.meta["confidence"], "high")
-        self.assertIn("- confidence_score: 0.70", self.body)
-
-    def test_resolution_preserved(self):
-        self.assertIn("- resolution: complementary_merge", self.body)
-
-    def test_status_preserved(self):
-        self.assertIn("- status: valid", self.body)
-        self.assertEqual(self.meta["status"], "official")
-
-    def test_document_parses_as_valid_okf(self):
-        okf.validate(self.meta)
-        self.assertRegex(self.meta["id"], r"^kb-[0-9a-f]{16}$")
-        self.assertEqual(self.meta["last_checked"], "2026-09-27")
+    def test_links_target_existing_documents_only(self):
+        self.publish(merged([
+            concept("a", [cfact("Shared subject alpha claim.")]),
+            concept("b", [cfact("Shared subject beta claim about alpha.",
+                                sources=[src()])]),
+        ]))
+        for name in ("a", "b"):
+            text = (self.kdir / f"{name}.md").read_text()
+            for line in text.splitlines():
+                if "](./" in line:
+                    target = line.split("](./", 1)[1].split(".md)", 1)[0]
+                    self.assertTrue((self.kdir / f"{target}.md").exists())
 
 
 class AtomicityTests(PublisherTestCase):
-    def test_failed_write_leaves_no_partial_documents(self):
-        original = Path.write_text
+    def test_render_failure_writes_nothing(self):
+        data = merged([concept("bad\nslug", [cfact("x")])])
+        with self.assertRaises(PublisherError):
+            self.publish(data)
+        self.assertEqual(self.snapshot(), {})
 
-        def flaky(self, data, encoding=None, **kw):
-            if self.name.endswith(".md.tmp"):
+    def test_stage_failure_cleans_temps_and_writes_nothing(self):
+        data = merged([
+            concept("api-access", [cfact("Approval may take 1 business day.")])])
+        real_write = Path.write_text
+
+        def flaky(path, text, encoding=None):
+            if str(path).endswith(".tmp"):
                 raise OSError("disk full")
-            return original(self, data, encoding=encoding, **kw)
+            return real_write(path, text, encoding=encoding)
 
         with patch.object(Path, "write_text", flaky):
             with self.assertRaises(OSError):
-                self.publish([fact("Fact A."), fact("Fact B.")])
-        self.assertEqual(self.doc_files(), [])       # no docs
-        self.assertEqual(list(self.kdir.glob("*.tmp")), [])  # no temp litter
-        self.assertFalse((self.kdir / "INDEX.md").exists())
+                self.publish(data)
+        self.assertEqual(self.snapshot(), {})  # nothing final written
+        leftovers = list(self.kdir.glob("*.tmp"))
+        self.assertEqual(leftovers, [])  # temps cleaned up
 
-
-class ReportTests(PublisherTestCase):
-    def test_report_shape(self):
-        report = self.publish([fact()])
-        self.assertEqual(set(report), {"input", "published", "updated",
-                                       "unchanged", "skipped", "renamed",
-                                       "index_updated", "documents", "last_run"})
-        self.assertEqual(report["input"], 1)
-
-
-class CliTests(PublisherTestCase):
-    def setUp(self):
-        super().setUp()
-        self._root_handlers = logging.getLogger().handlers[:]
-
-    def tearDown(self):
-        logging.getLogger().handlers[:] = self._root_handlers
-        self._tmp.cleanup()
-
-    def test_cli_with_file(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "merged.json"
-            path.write_text(json.dumps([fact()]), encoding="utf-8")
-            out = io.StringIO()
-            with redirect_stdout(out):
-                code = main([str(path)], knowledge_dir=self.kdir)
-        self.assertEqual(code, 0)
-        report = json.loads(out.getvalue())
-        self.assertEqual(report["published"], 1)
+    def test_documents_index_and_changelog_move_together(self):
+        report = self.publish(merged([
+            concept("api-access", [cfact("Approval may take 1 business day.")])]))
+        # One batch: all three artifacts exist after a successful publish,
+        # and the report accounts for them together.
+        self.assertTrue((self.kdir / "api-access.md").exists())
         self.assertTrue((self.kdir / "INDEX.md").exists())
+        self.assertTrue((self.kdir / "CHANGELOG.md").exists())
+        self.assertTrue(report["index_updated"])
+        self.assertTrue(report["changelog_updated"])
 
-    def test_cli_with_stdin(self):
-        out = io.StringIO()
-        with patch("sys.stdin", io.StringIO(json.dumps([fact()]))), \
-                redirect_stdout(out):
-            code = main(["-"], knowledge_dir=self.kdir)
-        self.assertEqual(code, 0)
-        self.assertEqual(json.loads(out.getvalue())["published"], 1)
 
-    def test_cli_invalid_input_exit_2(self):
-        err = io.StringIO()
-        with patch("sys.stdin", io.StringIO("[{\"content\": \"x\"}]")), \
-                redirect_stderr(err):
-            code = main(["-"], knowledge_dir=self.kdir)
-        self.assertEqual(code, 2)
-        self.assertIn("error:", err.getvalue())
+class ConfidenceBandTests(unittest.TestCase):
+    """Pinned boundaries — must fail if the implementation bands change."""
 
-    def test_cli_facts_object_unwrapped(self):
-        out = io.StringIO()
-        with patch("sys.stdin", io.StringIO(json.dumps({"facts": [fact()]}))), \
-                redirect_stdout(out):
-            code = main(["-"], knowledge_dir=self.kdir)
-        self.assertEqual(code, 0)
-        self.assertEqual(json.loads(out.getvalue())["input"], 1)
+    def test_boundaries(self):
+        self.assertEqual(confidence_level(0.599), "medium")
+        self.assertEqual(confidence_level(0.60), "high")   # exactly at band
+        self.assertEqual(confidence_level(0.601), "high")
+        self.assertEqual(confidence_level(0.299), "low")
+        self.assertEqual(confidence_level(0.30), "medium") # exactly at band
+        self.assertEqual(confidence_level(0.31), "medium")
+        self.assertEqual(confidence_level(0.0), "low")
+        self.assertEqual(confidence_level(1.0), "high")
 
 
 if __name__ == "__main__":

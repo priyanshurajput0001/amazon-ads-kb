@@ -22,7 +22,9 @@ community majority.
 
 The Adapter's facts: each carries its sentence, source (URL, official or
 community), how many independent people back a community source, and
-whether its content was stable across fetches.
+whether its content was stable across fetches. The Validator scores ONE
+batch at a time — it does not read `knowledge/`; comparison against the
+maintained bundle is the Merger's job.
 
 ## Process
 
@@ -40,8 +42,11 @@ whether its content was stable across fetches.
 3. **Stamp status** by score band (≥0.60 valid; 0.30–0.59
    valid_low_confidence; <0.30 rejected).
 4. **Apply safety rules:** an official source beats a community majority in
-   a disagreement; agreement among only weak community sources can never be
-   `valid`; a complete tie in a conflict keeps both versions.
+   a disagreement; official pages that contradict each other are BOTH
+   capped at valid_low_confidence (a deterministic validator cannot pick
+   between official pages — the Merger is where the tie is resolved or
+   explicitly kept); agreement among only weak community sources can never
+   be `valid`.
 
 ## Rules
 
@@ -50,6 +55,9 @@ whether its content was stable across fetches.
   recomputed, never inherited.
 * Every fact appears in the output — rejected facts stay, with a written
   reason; nothing is silently dropped.
+* The thresholds (0.60 / 0.30, the +0.15 corroboration step, the +0.10
+  stability bonus, the 0.8 / 0.5 similarity bands) are pinned by explicit
+  boundary tests in `tests/test_validator_thresholds.py`.
 
 ## Output
 
@@ -71,4 +79,5 @@ valid**. A lone blog rumor: 0.15, no official backing → **rejected**.
 
 `pipeline/validator.py` (`validate_facts`); the complete rules and test
 scenarios are documented in
-[`.claude/skills/validation_rules/SKILL.md`](./validation_rules/SKILL.md).
+[`.claude/skills/validation_rules/SKILL.md`](./validation_rules/SKILL.md);
+the boundary tests live in `tests/test_validator_thresholds.py`.

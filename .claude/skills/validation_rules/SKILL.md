@@ -7,7 +7,11 @@ description: Reference for the Validator stage's scoring rules, status decisions
 
 Implementation: `pipeline/validator.py` (function `validate_facts(facts) -> list[dict]`).
 Tests: `tests/test_validator.py` — class `SpecScenarioTests` mirrors the acceptance
-checklist one-for-one. Run: `python3 -m unittest discover -s tests`.
+checklist one-for-one; `tests/test_validator_thresholds.py` pins every
+threshold boundary with literal expected values (0.60/0.30 bands, +0.15
+corroboration step, +0.30 cap, +0.10 stability, 3-people minimum, 0.8/0.5
+similarity bands) so a mutated constant fails the suite. Run:
+`python3 -m unittest discover -s tests`.
 
 The Validator is **fully deterministic**: no LLM, no network, no clock reads.
 Identical input → identical output. Extractor's `confidence_pct` is **never read**.

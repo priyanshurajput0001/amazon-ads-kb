@@ -1,57 +1,44 @@
-"""Merger stage: collapse validated facts into the final fact set for publishing.
+"""Merger stage: fold validated facts into concepts, against the live bundle.
 
 Architecture boundary (deliberate and visible):
 
-    LLM seam  ->  semantic relationship classification   duplicate | conflicting | complementary
-    Python    ->  conflict resolution & combination      authority > recency > majority
+    Python    ->  concept matching (deterministic band) + conflict resolution
+                  (authority > recency > majority) + combination
+    LLM seam  ->  same-concept decisions in the ambiguous band, and pairwise
+                  duplicate|conflicting|complementary labels within a concept
 
-The LLM answers ONLY "how are these two facts related?" It never decides a
-winner, assigns confidence, rewrites claims, creates merged facts, or touches
-knowledge/. Every decision after the label — which conflicting fact wins, how
-duplicates and complementary facts combine — is deterministic Python, so
-identical input plus identical labels produce identical output.
+The knowledge bundle PARTICIPATES (review 2026-09-28): the Merger loads the
+existing concept documents from knowledge/, matches every new validated fact
+against them (deterministic token-overlap candidates first, LLM confirmation
+only in the ambiguous band — the whole bundle is never sent to the LLM), and
+merges new facts INTO the existing concepts. A source that changes a value
+(MIT-0 -> Apache-2.0) therefore updates the concept it already belongs to.
 
-Input: the Validator's output — the original fact fields (url, date, content,
-is_changed, last_run, source_type, community_agree_count, topic_id, ...)
-already extended with "confidence_score" and "status". Only facts with status
-"valid" or "valid_low_confidence" participate in merging; "rejected" facts
-pass through completely unchanged (never merged, never dropped).
+Output: concepts, not sentences. One concept = one future OKF document:
 
-Resolution values on merged facts:
-  single_source                   untouched fact, no relation found in its group
-  duplicate_merged                same claim from multiple sources, one survivor
-  complementary_merge             same subject, non-conflicting details combined
-  conflict_resolved_by_authority  official beat community
-  conflict_resolved_by_recency    newer source beat older (authority tied)
-  conflict_resolved_by_majority   more independent sources won (authority+date tied)
-  unresolved_conflict             authority, recency and majority all tied: BOTH kept
+    {"id": stable slug, "title": ..., "type": "concept",
+     "facts": [fact dicts], "conflicts": [superseded fact dicts]}
 
-Conflicts are resolved cluster-vs-cluster with precedence authority > recency
-> majority. Authority: a cluster containing any official source outranks a
-community-only cluster, regardless of community numbers. Recency: newest
-source date in the cluster (missing/unparseable dates lose to dated ones).
-Majority: count of distinct supporting URLs. The losing cluster is dropped
-with a log line naming the rule — never silently. Conflicts are processed in
-deterministic (input-index) order, and a cluster already dropped by an
-earlier conflict takes no further part.
+fact dict: content, confidence_score, status, resolution, first_seen,
+sources [{url, date, source_type}]; conflict dicts add superseded_by.
+
+Conflicts are never silently erased: the losing fact is RETAINED in the
+concept's conflicts list with its full provenance, the rule that demoted it,
+and the content that superseded it. A complete tie (authority, recency and
+majority all equal) keeps BOTH facts current, each stamped
+unresolved_conflict.
 
 Deterministic combination rules (the LLM never rewrites content):
-  duplicates      keep ONE original content verbatim — the highest-scoring
-                  member's (earliest input index on ties); never paraphrase
-  complementary   join member contents in input order with a single space:
-                  both texts preserved verbatim, nothing invented. The merge
-                  is skipped when any pair between the two clusters was
-                  labeled conflicting (keep facts separate rather than force
-                  a relationship)
-  confidence      max of member scores; status "valid" if any member is valid
-  sources         every contributing URL once, as {url, date, source_type}
+  duplicates      keep ONE original content verbatim — an existing fact's
+                  wording when any is present (stability across runs), else
+                  the highest-scoring member's; never paraphrase
+  complementary   facts simply coexist in the concept — sentences are no
+                  longer space-joined into run-on hybrids
+  confidence      recomputed corroboration (Validator arithmetic, reused)
+                  but never below the best member's score
+  sources         union of every contributing {url, date, source_type};
 
-Grouping: by topic_id. Facts without topic_id are treated as their own topic
-(no LLM calls for them) — cross-topic semantic grouping is upstream's job.
-
-Fail-safe LLM seam: invalid JSON or an invalid label raises LlmError; the
-offending pair is reported (logged) and both facts stay separate
-single_source facts instead of silently guessing a relationship.
+Rejected facts pass through in the report, never merged, never published.
 
 CLI: python3 -m pipeline.merger FACTS_JSON   ("-" reads stdin)
 """
@@ -67,6 +54,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+from pipeline import concepts
+from pipeline.concepts import (
+    AUTO_SAME,
+    GENERIC_TOKENS,
+    canonical_tokens,
+    humanize,
+    jaccard,
+    number_tokens,
+)
+from pipeline.validator import NEGATION_TOKENS, calculate_confidence
+
 logger = logging.getLogger("pipeline.merger")  # stable name when run as -m
 
 LABELS = ("duplicate", "conflicting", "complementary")
@@ -75,6 +73,9 @@ REJECTED = "rejected"
 SOURCE_TYPES = ("official", "community")
 REQUIRED_FACT_KEYS = ("url", "content", "source_type", "status")
 LLM_TIMEOUT = 120  # seconds, one-shot claude call per pair
+
+# Within-concept deterministic bands (token-set Jaccard over stemmed tokens).
+FLIP_MIN = 0.5   # a negation/numeric flip at >= 0.5 overlap is a conflict
 
 
 class LlmError(RuntimeError):
@@ -86,7 +87,7 @@ class MergerError(ValueError):
 
 
 # --------------------------------------------------------------------------
-# LLM seam — semantic classification only. Mock this in tests.
+# LLM seams — semantic classification only. Mock these in tests.
 # --------------------------------------------------------------------------
 
 MERGER_PROMPT = """You are the semantic-comparison seam of the Merger for an Amazon Ads knowledge pipeline.
@@ -145,7 +146,7 @@ def _parse_label(text: str) -> str:
 
 
 # --------------------------------------------------------------------------
-# Deterministic layer — grouping, conflict resolution, combination.
+# Contract validation
 # --------------------------------------------------------------------------
 
 def _check_contract(facts: object) -> None:
@@ -178,26 +179,84 @@ def _check_contract(facts: object) -> None:
                     f"'confidence_score', got {score!r}")
 
 
-def _group_facts(facts: list[dict]) -> list[list[int]]:
-    """Bucket participating fact indices by topic_id, in first-appearance order.
+# --------------------------------------------------------------------------
+# Within-concept pairwise classification (deterministic first)
+# --------------------------------------------------------------------------
 
-    Facts without a usable topic_id become their own single-fact group — the
-    Merger never guesses semantic grouping across topics.
+def _classify_deterministic(a: frozenset[str], b: frozenset[str]) -> str | None:
+    """duplicate | conflicting | None (undecided — maybe worth an LLM call).
+
+    Reuses the Validator's tripwires: a negation or numeric flip at >= 0.5
+    overlap is a conflict; >= 0.8 overlap is the same claim restated.
     """
-    groups: dict[str, list[int]] = {}
-    order: list[str] = []
-    for i, fact in enumerate(facts):
-        if fact["status"] == REJECTED:
-            continue
-        topic = fact.get("topic_id")
-        key = topic.strip() if isinstance(topic, str) and topic.strip() \
-            else f"\x00auto:{i}"
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append(i)
-    return [groups[k] for k in order]
+    sim = jaccard(a, b)
+    if sim < FLIP_MIN:
+        return None
+    neg_a = {t for t in a if t in NEGATION_TOKENS}
+    neg_b = {t for t in b if t in NEGATION_TOKENS}
+    num_a, num_b = number_tokens(a), number_tokens(b)
+    if (neg_a != neg_b) or (num_a and num_b and num_a != num_b):
+        return "conflicting"
+    if sim >= AUTO_SAME:
+        return "duplicate"
+    return None
 
+
+def _needs_llm(a: frozenset[str], b: frozenset[str]) -> bool:
+    """Cheap deterministic gate: only pairs that could plausibly be
+    duplicate/conflicting reach the LLM seam (shared informative content
+    words, or value-bearing numbers on both sides)."""
+    shared = a & b
+    informative = shared - GENERIC_TOKENS
+    if len(informative) >= 2:
+        return True
+    if number_tokens(a) and number_tokens(b) and informative:
+        return True
+    return False
+
+
+def _member_tokens(member: dict) -> frozenset[str]:
+    return canonical_tokens(member["content"])
+
+
+def _pair_labels(members: list[dict], new_flags: list[bool],
+                 llm) -> dict[tuple[int, int], str]:
+    """Classify pairs that involve at least one NEW fact. Deterministic bands
+    first; the LLM seam only for undecided, plausible pairs. Failed pairs are
+    reported and left out — both facts then stay separate."""
+    tokens = [_member_tokens(m) for m in members]
+    labels: dict[tuple[int, int], str] = {}
+    for i in range(len(members)):
+        for j in range(i + 1, len(members)):
+            if not (new_flags[i] or new_flags[j]):
+                continue  # existing-existing: settled in an earlier run
+            verdict = _classify_deterministic(tokens[i], tokens[j])
+            if verdict is None:
+                if not _needs_llm(tokens[i], tokens[j]):
+                    continue  # coexist; no relationship to act on
+                try:
+                    verdict = llm(
+                        {"url": members[i]["sources"][0]["url"],
+                         "content": members[i]["content"]},
+                        {"url": members[j]["sources"][0]["url"],
+                         "content": members[j]["content"]})
+                except LlmError as exc:
+                    logger.warning(
+                        "LLM classification failed for %r <-> %r; keeping both "
+                        "facts separate (%s)", members[i]["content"][:50],
+                        members[j]["content"][:50], exc)
+                    continue
+                if verdict not in LABELS:
+                    logger.warning(
+                        "invalid label %r; keeping both facts separate", verdict)
+                    continue
+            labels[(i, j)] = verdict
+    return labels
+
+
+# --------------------------------------------------------------------------
+# Conflict resolution — deterministic precedence over clusters
+# --------------------------------------------------------------------------
 
 def _parse_date(value: object) -> datetime.datetime | None:
     """Best-effort ISO-8601 parse; naive datetimes are pinned to UTC so mixed
@@ -216,50 +275,33 @@ def _parse_date(value: object) -> datetime.datetime | None:
     return parsed
 
 
-def _pair_labels(facts: list[dict], group: list[int], llm) -> dict[tuple[int, int], str]:
-    """Classify every pair in a group (local indices, x < y). Failed pairs are
-    reported and simply left out — both facts then stay separate."""
-    labels: dict[tuple[int, int], str] = {}
-    for x in range(len(group)):
-        for y in range(x + 1, len(group)):
-            i, j = group[x], group[y]
-            try:
-                label = llm(facts[i], facts[j])
-            except LlmError as exc:
-                logger.warning(
-                    "LLM classification failed for %s <-> %s; keeping both "
-                    "facts separate (%s)", facts[i]["url"], facts[j]["url"], exc)
-                continue
-            if label not in LABELS:
-                logger.warning(
-                    "invalid label %r for %s <-> %s; keeping both facts separate",
-                    label, facts[i]["url"], facts[j]["url"])
-                continue
-            labels[(x, y)] = label
-            logger.debug("pair %s <-> %s: %s",
-                         facts[i]["url"], facts[j]["url"], label)
-    return labels
+def _cluster_dates(members: list[dict]) -> datetime.datetime | None:
+    dates = [d for d in (_parse_date(s.get("date"))
+                         for m in members for s in m["sources"]) if d]
+    return max(dates) if dates else None
 
 
-def _resolve_conflict(
-    facts: list[dict],
-    members_a: list[int],
-    members_b: list[int],
-) -> tuple[str, str] | None:
+def _cluster_official(members: list[dict]) -> bool:
+    return any(s.get("source_type") == "official"
+               for m in members for s in m["sources"])
+
+
+def _cluster_urls(members: list[dict]) -> set[str]:
+    return {s["url"] for m in members for s in m["sources"]}
+
+
+def _resolve_conflict(members_a: list[dict],
+                      members_b: list[dict]) -> tuple[str, str] | None:
     """Deterministic precedence: authority > recency > majority.
 
-    Returns (("left"|"right", rule), ...) or None when completely tied.
+    Returns ("left"|"right", rule) or None when completely tied.
     No LLM involvement — this is pure Python by design.
     """
-    a_official = any(facts[m]["source_type"] == "official" for m in members_a)
-    b_official = any(facts[m]["source_type"] == "official" for m in members_b)
+    a_official, b_official = _cluster_official(members_a), _cluster_official(members_b)
     if a_official != b_official:
         return ("left", "authority") if a_official else ("right", "authority")
 
-    a_date = max((d for d in (_parse_date(facts[m].get("date")) for m in members_a)
-                  if d is not None), default=None)
-    b_date = max((d for d in (_parse_date(facts[m].get("date")) for m in members_b)
-                  if d is not None), default=None)
+    a_date, b_date = _cluster_dates(members_a), _cluster_dates(members_b)
     if a_date is None and b_date is None:
         pass
     elif b_date is None:
@@ -269,54 +311,120 @@ def _resolve_conflict(
     elif a_date != b_date:
         return ("left", "recency") if a_date > b_date else ("right", "recency")
 
-    a_urls = len({facts[m]["url"] for m in members_a})
-    b_urls = len({facts[m]["url"] for m in members_b})
+    a_urls, b_urls = len(_cluster_urls(members_a)), len(_cluster_urls(members_b))
     if a_urls != b_urls:
         return ("left", "majority") if a_urls > b_urls else ("right", "majority")
     return None
 
 
-def _build_merged(
-    facts: list[dict],
-    members: list[int],
-    resolution: str,
-    has_complementary: bool,
-) -> dict:
-    """Combine one cluster into the output fact. No content is ever rewritten:
-    duplicates keep one member's text verbatim; complementary merges join the
-    original texts in input order with a single space."""
-    if len(members) == 1:
-        content = facts[members[0]]["content"]
-    elif has_complementary:
-        content = " ".join(facts[m]["content"] for m in members)
-    else:
-        best = max(members, key=lambda m: (facts[m]["confidence_score"], -m))
-        content = facts[best]["content"]
+# --------------------------------------------------------------------------
+# Combination
+# --------------------------------------------------------------------------
 
-    sources: list[dict] = []
-    seen: set[str] = set()
-    for m in members:
-        url = facts[m]["url"]
-        if url in seen:
-            continue
-        seen.add(url)
-        sources.append({"url": url, "date": facts[m].get("date"),
-                        "source_type": facts[m]["source_type"]})
+def _date_part(value: object) -> str | None:
+    if isinstance(value, str) and len(value) >= 10:
+        return value[:10]
+    return None
+
+
+def _combine(members: list[dict], resolution: str) -> dict:
+    """Combine one duplicate cluster into a single fact. No content is ever
+    rewritten: an existing member's wording wins (stability across runs);
+    for brand-new clusters, the highest-scoring member's text (earliest
+    index on ties)."""
+    existing = [m for m in members if not m.get("is_new")]
+    if existing:
+        content = existing[0]["content"]
+        template = existing[0]
+    else:
+        best = max(range(len(members)),
+                   key=lambda i: (float(members[i]["confidence_score"]), -i))
+        content = members[best]["content"]
+        template = members[best]
+
+    # Union of sources: one entry per URL, latest date wins (a re-fetch that
+    # re-confirms a claim refreshes its fetch date; first_seen keeps the past).
+    by_url: dict[str, dict] = {}
+    for member in members:
+        for source in member["sources"]:
+            url = source["url"]
+            prior = by_url.get(url)
+            if prior is None or (_parse_date(source.get("date")) or
+                                 datetime.datetime.min.replace(
+                                     tzinfo=datetime.UTC)) >= \
+                    (_parse_date(prior.get("date")) or
+                     datetime.datetime.min.replace(tzinfo=datetime.UTC)):
+                by_url[url] = {"url": url, "date": source.get("date"),
+                               "source_type": source["source_type"]}
+    sources = [by_url[url] for url in sorted(by_url)]
+
+    first_seen = min((m.get("first_seen") for m in members
+                      if m.get("first_seen")), default=None)
+
+    # Recompute corroboration with the Validator's arithmetic, but never
+    # lower a score the members already earned.
+    best_score = max(float(m["confidence_score"]) for m in members)
+    urls = {s["url"] for m in members for s in m["sources"]}
+    agree = max((int(m.get("community_agree_count") or 0) for m in members),
+                default=0)
+    stable = any(m.get("stable") for m in members)
+    recomputed, _ = calculate_confidence(
+        template["sources"][0]["source_type"], agree, max(0, len(urls) - 1),
+        stable)
+    score = max(best_score, recomputed)
 
     return {
         "content": content,
-        "sources": sources,
-        "confidence_score": max(facts[m]["confidence_score"] for m in members),
-        "resolution": resolution,
-        "status": ("valid" if any(facts[m]["status"] == "valid" for m in members)
+        "confidence_score": score,
+        "status": ("valid" if any(m["status"] == "valid" for m in members)
                    else "valid_low_confidence"),
+        "resolution": resolution,
+        "first_seen": first_seen,
+        "sources": sources,
     }
 
 
-def _merge_group(facts: list[dict], group: list[int], llm) -> list[tuple[int, dict]]:
-    """Merge one topic group. Returns [(first_member_global_index, merged), ...]."""
-    labels = _pair_labels(facts, group, llm)
-    n = len(group)
+# --------------------------------------------------------------------------
+# Per-concept merge
+# --------------------------------------------------------------------------
+
+def _new_member(fact: dict, today: str) -> dict:
+    date = fact.get("date")
+    return {
+        "content": fact["content"],
+        "confidence_score": float(fact["confidence_score"]),
+        "status": fact["status"],
+        "resolution": "single_source",
+        "first_seen": _date_part(date) or today,
+        "sources": [{"url": fact["url"], "date": date,
+                     "source_type": fact["source_type"]}],
+        "community_agree_count": fact.get("community_agree_count", 0),
+        "stable": fact.get("is_changed") == "N",
+        "is_new": True,
+    }
+
+
+def _existing_member(fact: dict) -> dict:
+    return {**fact, "community_agree_count": 0, "stable": False,
+            "is_new": False}
+
+
+def _merge_concept(new_facts: list[dict], existing: dict | None, today: str,
+                   classify_llm) -> dict:
+    """Merge the new facts for one concept with its existing document."""
+    members: list[dict] = []
+    new_flags: list[bool] = []
+    if existing:
+        for fact in existing.get("facts", []):
+            members.append(_existing_member(fact))
+            new_flags.append(False)
+    for fact in new_facts:
+        members.append(_new_member(fact, today))
+        new_flags.append(True)
+
+    labels = _pair_labels(members, new_flags, classify_llm) if len(members) > 1 \
+        else {}
+    n = len(members)
     parent = list(range(n))
 
     def find(x: int) -> int:
@@ -329,128 +437,140 @@ def _merge_group(facts: list[dict], group: list[int], llm) -> list[tuple[int, di
         return [l for l in range(n) if find(l) == root]
 
     # Duplicates first: same claim -> one survivor cluster.
-    for (x, y), label in sorted(labels.items()):
+    for (i, j), label in sorted(labels.items()):
         if label == "duplicate":
-            rx, ry = find(x), find(y)
-            if rx != ry:
-                parent[ry] = rx
+            ri, rj = find(i), find(j)
+            if ri != rj:
+                parent[rj] = ri
 
-    # Complementary: join clusters, but never across a conflicting pair.
-    has_comp = {l: False for l in range(n)}  # keyed by current root
-    for (x, y), label in sorted(labels.items()):
-        if label != "complementary":
-            continue
-        rx, ry = find(x), find(y)
-        if rx == ry:
-            has_comp[rx] = True
-            continue
-        lefts, rights = members_of(rx), members_of(ry)
-        unsafe = any(labels.get((min(a, b), max(a, b))) == "conflicting"
-                     for a in lefts for b in rights)
-        if unsafe:
-            logger.debug("complementary merge %s <-> %s skipped: a conflicting "
-                         "pair exists between the clusters",
-                         facts[group[lefts[0]]]["url"], facts[group[rights[0]]]["url"])
-            continue
-        parent[ry] = rx
-        has_comp[rx] = has_comp.get(rx, False) or has_comp.get(ry, False) or True
-
-    # Conflicts: deterministic precedence, losers dropped (with a log line).
+    # Conflicts: deterministic precedence between clusters. The losing
+    # cluster is RETAINED (with provenance) as a superseded conflict.
     win_rule: dict[int, str] = {}
     unresolved: set[int] = set()
     dead: set[int] = set()
-    for (x, y), label in sorted(labels.items()):
+    conflict_records: list[dict] = []
+    for (i, j), label in sorted(labels.items()):
         if label != "conflicting":
             continue
-        rx, ry = find(x), find(y)
-        if rx == ry:
-            logger.debug("conflict inside one merged cluster (%s <-> %s); kept",
-                         facts[group[x]]["url"], facts[group[y]]["url"])
+        ri, rj = find(i), find(j)
+        if ri == rj:
+            logger.debug("conflict inside one merged cluster; kept")
             continue
-        if rx in dead or ry in dead:
+        if ri in dead or rj in dead:
             continue
-        members_a = [group[l] for l in members_of(rx)]
-        members_b = [group[l] for l in members_of(ry)]
-        outcome = _resolve_conflict(facts, members_a, members_b)
+        lefts = [members[l] for l in members_of(ri)]
+        rights = [members[l] for l in members_of(rj)]
+        outcome = _resolve_conflict(lefts, rights)
         if outcome is None:
-            unresolved.update((rx, ry))
+            unresolved.update((ri, rj))
             logger.info("unresolved conflict (authority, recency and majority "
-                        "tied): keeping both %s and %s",
-                        [facts[m]["url"] for m in members_a],
-                        [facts[m]["url"] for m in members_b])
+                        "tied): keeping both %r and %r",
+                        lefts[0]["content"][:50], rights[0]["content"][:50])
             continue
         side, rule = outcome
-        winner_root, loser_root = (rx, ry) if side == "left" else (ry, rx)
+        winner_root, loser_root = (ri, rj) if side == "left" else (rj, ri)
         win_rule.setdefault(winner_root, rule)
         dead.add(loser_root)
-        loser_urls = [facts[m]["url"] for m in
-                      ([group[l] for l in members_of(loser_root)])]
-        logger.info("conflict resolved by %s: %s wins, dropping %s", rule,
-                    [facts[m]["url"] for m in
-                     ([group[l] for l in members_of(winner_root)])], loser_urls)
+        winner = _combine([members[l] for l in members_of(winner_root)],
+                          f"conflict_resolved_by_{rule}")
+        loser_members = [members[l] for l in members_of(loser_root)]
+        loser = _combine(loser_members, f"conflict_resolved_by_{rule}")
+        loser["superseded_by"] = winner["content"]
+        conflict_records.append(loser)
+        logger.info("conflict resolved by %s: %r supersedes %r", rule,
+                    winner["content"][:50], loser["content"][:50])
 
-    # Assemble: one output fact per surviving cluster, in member order.
-    out: list[tuple[int, dict]] = []
+    # Assemble surviving clusters, in member order.
+    facts: list[dict] = []
     for root in sorted({find(l) for l in range(n)}):
         if root in dead:
             continue
-        members = sorted(members_of(root))
+        idxs = sorted(members_of(root))
         if root in unresolved:
             resolution = "unresolved_conflict"
         elif root in win_rule:
             resolution = f"conflict_resolved_by_{win_rule[root]}"
-        elif len(members) > 1 and has_comp.get(root, False):
-            resolution = "complementary_merge"
-        elif len(members) > 1:
+        elif len(idxs) > 1:
             resolution = "duplicate_merged"
         else:
-            resolution = "single_source"
-        merged = _build_merged(facts, [group[l] for l in members],
-                               resolution, has_comp.get(root, False))
-        logger.info("merge group of %d -> resolution=%s status=%s sources=%d",
-                    len(members), resolution, merged["status"],
-                    len(merged["sources"]))
-        out.append((group[members[0]], merged))
-    return out
+            resolution = members[idxs[0]].get("resolution", "single_source")
+        merged = _combine([members[l] for l in idxs], resolution)
+        facts.append(merged)
+
+    return {
+        "id": (existing or {}).get("id") or new_facts[0]["concept_id"],
+        "title": (existing or {}).get("title")
+        or humanize(new_facts[0]["concept_id"]),
+        "type": "concept",
+        "facts": facts,
+        "conflicts": ((existing or {}).get("conflicts", [])
+                      + conflict_records),
+    }
 
 
-def merge_facts(facts: list[dict], llm=claude_cli_classify) -> list[dict]:
-    """Merge Validator output into the final fact set for the Publisher.
+# --------------------------------------------------------------------------
+# Entry point
+# --------------------------------------------------------------------------
 
-    Rejected facts pass through unchanged. Participating facts are merged per
-    topic group; output preserves input order (each merged fact appears at its
-    first contributing member's position).
+def merge_facts(
+    facts: list[dict],
+    existing: dict[str, dict] | None = None,
+    classify_llm=claude_cli_classify,
+    match_llm=concepts.claude_cli_concept_match,
+    today: str | None = None,
+) -> dict:
+    """Merge Validator output into concepts, matched against the live bundle.
+
+    Returns {"concepts": [...], "rejected": [...]}: concepts carry the full
+    merged state for the Publisher; rejected facts pass through unchanged.
     """
     _check_contract(facts)
-    emitted: dict[int, dict] = {}
-    for group in _group_facts(facts):
-        for representative, merged in _merge_group(facts, group, llm):
-            emitted[representative] = merged
-    out: list[dict] = []
-    for i, fact in enumerate(facts):
-        if fact["status"] == REJECTED:
-            out.append(dict(fact))
-        elif i in emitted:
-            out.append(emitted[i])
-    return out
+    existing = existing or {}
+    today = today or datetime.datetime.now(datetime.UTC).date().isoformat()
+
+    participating = [f for f in facts if f["status"] != REJECTED]
+    rejected = [dict(f) for f in facts if f["status"] == REJECTED]
+
+    assigned, new_concepts = concepts.assign_concepts(
+        participating, existing, match_llm=match_llm)
+
+    grouped: dict[str, list[dict]] = {}
+    for fact in assigned:
+        grouped.setdefault(fact["concept_id"], []).append(fact)
+
+    merged_concepts: list[dict] = []
+    for cid in sorted(grouped):
+        merged = _merge_concept(grouped[cid], existing.get(cid), today,
+                                classify_llm)
+        concepts.check_concept(merged)
+        merged_concepts.append(merged)
+        logger.info("concept %s: %d facts, %d conflicts",
+                    cid, len(merged["facts"]), len(merged["conflicts"]))
+
+    return {"concepts": merged_concepts, "rejected": rejected}
 
 
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 
-def main(argv: list[str] | None = None, llm=claude_cli_classify) -> int:
+def main(argv: list[str] | None = None, classify_llm=claude_cli_classify,
+         match_llm=concepts.claude_cli_concept_match) -> int:
     """CLI entry point: python3 -m pipeline.merger FACTS_JSON
 
     FACTS_JSON is a file containing a JSON array of Validator-output facts
-    (or {"facts": [...]}) or "-" to read stdin. Prints the merged fact array
-    to stdout. Exit 0 on success; 2 means the input itself was invalid.
+    (or {"facts": [...]}) or "-" to read stdin. The existing bundle is read
+    from knowledge/ (override with --knowledge-dir). Prints the merged
+    concept array to stdout. Exit 0 on success; 2 on invalid input.
     """
     parser = argparse.ArgumentParser(
-        description="Merge validated facts (LLM classifies pairs; Python "
-                    "resolves and combines).")
+        description="Merge validated facts into concepts (LLM classifies "
+                    "pairs and concept matches; Python resolves and combines).")
     parser.add_argument("facts", metavar="FACTS_JSON",
                         help="JSON array of validated facts, or '-' for stdin")
+    parser.add_argument("--knowledge-dir", default=None,
+                        help="existing bundle to merge into "
+                             "(default: the repository knowledge/)")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="also log pair labels and merge details")
     args = parser.parse_args(argv)
@@ -468,9 +588,13 @@ def main(argv: list[str] | None = None, llm=claude_cli_classify) -> int:
         return 2
     if isinstance(data, dict) and isinstance(data.get("facts"), list):
         data = data["facts"]
+    kdir = Path(args.knowledge_dir) if args.knowledge_dir else \
+        Path(__file__).resolve().parents[1] / "knowledge"
+    existing = concepts.load_bundle(kdir)
     try:
-        merged = merge_facts(data, llm=llm)
-    except MergerError as exc:
+        merged = merge_facts(data, existing=existing, classify_llm=classify_llm,
+                             match_llm=match_llm)
+    except (MergerError, concepts.ConceptError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(json.dumps(merged, indent=2, ensure_ascii=False))

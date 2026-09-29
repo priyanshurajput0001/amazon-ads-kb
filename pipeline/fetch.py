@@ -98,12 +98,18 @@ def _direct(url: str, fetched_at: str) -> FetchResult | None:
     try:
         with urllib.request.urlopen(req, timeout=DIRECT_TIMEOUT) as resp:
             charset = resp.headers.get_content_charset() or "utf-8"
+            content_type = (resp.headers.get_content_type() or "").lower()
             content = resp.read().decode(charset, errors="replace")
     except (OSError, urllib.error.URLError, ValueError):
         return None
     if not content.strip():
         return None
-    return FetchResult(url=url, strategy="direct", content_type="html", title=None,
+    # Plain-text bodies (text/plain, text/markdown — e.g. raw.githubusercontent
+    # files) ARE the readable content; anything else (HTML shells, JS apps)
+    # is honestly labeled html so the pipeline refuses to extract it.
+    kind = "markdown" if content_type in ("text/plain", "text/markdown") \
+        else "html"
+    return FetchResult(url=url, strategy="direct", content_type=kind, title=None,
                        content=content, sha256=_sha256(content), fetched_at=fetched_at)
 
 
@@ -188,6 +194,9 @@ def main(
             "url": r["url"],
             "ok": r["ok"],
             "verdict": r["change"],
+            # Two-phase commit: a hash fetched here is PENDING until the
+            # orchestrator commits it after a successful publication.
+            "committed": r["change"] not in ("new", "changed"),
             "sha256": r.get("sha256"),
             "strategy": r.get("strategy"),
             "content_length": len(r["content"]) if "content" in r else None,

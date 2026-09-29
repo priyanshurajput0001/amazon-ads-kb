@@ -1,63 +1,52 @@
-"""Publisher stage: write merged facts into knowledge/ as OKF documents.
+"""Publisher stage: write merged CONCEPTS into knowledge/ as OKF documents.
 
 Deterministic by construction: no LLM, no network, no RNG. The only
 non-deterministic input is the injected `now` (timezone-aware datetime) used
-for the report's last_run and for a document's last_checked — and last_checked
-is only ever written when a document's actual content changes, so identical
-Merger output produces byte-identical knowledge documents across runs even
-though last_run differs. last_run never feeds document identity.
+for the report's last_run and for a document's last_checked — and
+last_checked is only ever written when a document's actual content changes,
+so identical Merger output produces byte-identical knowledge documents
+across runs even though last_run differs. last_run never feeds identity.
 
-Input: Merger output facts:
+Input: Merger output {"concepts": [...], "rejected": [...]}.
 
-    {"content": ..., "sources": [{"url", "date", "source_type"}],
-     "confidence_score": 0.7, "resolution": ..., "status": valid|valid_low_confidence}
+IDENTITY vs FILENAME (deliberately one and the same, stably):
+  identity   the concept's stable slug (`id`, established by the concept
+             layer — never the sentence wording, never the clock). It is
+             what updates are keyed by: the same concept from any source,
+             in any wording, updates ONE document.
+  filename   f"{id}.md" — the id is already a readable kebab-case slug, so
+             filenames are human-friendly by construction and can never
+             drift away from identity.
 
-Facts with status "rejected" (Merger passes them through unchanged) are never
-published — they are skipped and counted. Malformed facts raise PublisherError
-up front; nothing is silently repaired and nothing is written on failure.
-
-IDENTITY vs FILENAME (deliberately separate):
-
-  identity   "kb-" + sha256(content)[:16], stored in the frontmatter `id`.
-             Content-only, stable forever; it is what updates are keyed by, so
-             the same claim from new sources updates ONE document.
-  filename   human-readable kebab-case slug derived from the fact's topic_id
-             (when present) or content — stopwords dropped, capped in length,
-             special characters stripped. Two different documents can produce
-             the same slug; the collision is resolved deterministically by
-             appending the tail of the stable id (never a silent overwrite).
-             An existing document is always updated IN PLACE at its current
-             filename — filenames never churn on re-publication.
-
-The OKF frontmatter schema (pipeline/okf.py) admits exactly
-id/title/sources/confidence/status/last_checked, so provenance
-(confidence_score, resolution, fact status) lives in the body's Details block,
-preserved verbatim.
-
-Document mapping (per fact, one OKF document):
-  id            stable content hash (see above) — never the filename
-  title         the fact content, verbatim
-  sources       sorted, de-duplicated source URLs
-  confidence    score mapped onto the OKF levels with the Validator's bands:
-                >=0.60 high | >=0.30 medium | else low
+Document mapping (per concept, one OKF document):
+  id            the stable concept slug — never the filename, never wording
+  title         humanized from the id (stable with it)
+  type          "concept" (the single OKF document type in this bundle)
+  sources       sorted, de-duplicated source URLs across current facts
+  confidence    level of the WEAKEST current fact (a chain is as strong as
+                its weakest link): >=0.60 high | >=0.30 medium | else low
   status        official if any contributing source is official, else community
   last_checked  preserved on unchanged documents; bumped only on real change
-  body          verbatim content + a provenance block + one ## Sources line
-                per source with its url, date and source_type — never
-                paraphrased, never summarized
+  body          Facts (verbatim content + per-fact provenance), Conflicts
+                (superseded facts with their provenance and superseded_by),
+                Sources, Related — rendered by pipeline/concepts.py
+
+Related links are generated ONLY where a relationship is actually supported:
+concepts sharing at least one source URL AND >= RELATED_MIN token overlap.
+Both directions of support are required — never invented, never decorative.
 
 Idempotency (CLAUDE.md safe-to-re-run contract): unchanged documents are not
-rewritten at all; knowledge/INDEX.md is rebuilt from the directory and written
-only when its text actually changes; knowledge/CHANGELOG.md is appended to
-only when something was published or updated. Unrelated existing documents are
-never touched. Legacy kb-<hash>.md files from earlier runs are migrated by
-rename (same bytes, same id, readable filename) instead of duplicated.
+rewritten at all; knowledge/INDEX.md is rebuilt from the final snapshot and
+written only when its text actually changes; knowledge/CHANGELOG.md is
+appended to only when something was published or updated.
 
-Atomicity: new/changed files are first staged as <name>.tmp and atomically
-renamed only after all staged writes succeeded. A failure at any point cleans
-up its temp files and leaves no partial documents.
+Atomicity (review Part 8): documents, INDEX and CHANGELOG are computed in
+full first, the complete bundle text is validated (every rendered document
+must re-parse as OKF), and ONLY then is everything staged as <name>.tmp and
+atomically renamed in ONE batch. There is no intermediate on-disk state in
+which documents exist without their catalog entries or vice versa.
 
-CLI: python3 -m pipeline.publisher MERGED_FACTS.json   ("-" reads stdin)
+CLI: python3 -m pipeline.publisher MERGED_CONCEPTS.json   ("-" reads stdin)
 Prints the publication report as JSON; exit 2 on invalid input.
 """
 
@@ -65,13 +54,12 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import hashlib
 import json
 import logging
-import re
 import sys
 from pathlib import Path
 
+from pipeline import concepts
 from pipeline import okf
 
 logger = logging.getLogger("pipeline.publisher")  # stable name when run as -m
@@ -80,37 +68,17 @@ DEFAULT_KNOWLEDGE_PATH = Path(__file__).resolve().parents[1] / "knowledge"
 INDEX_NAME = "INDEX.md"
 CHANGELOG_NAME = "CHANGELOG.md"
 
-FACT_STATUSES = ("valid", "valid_low_confidence", "rejected")
-RESOLUTIONS = (
-    "single_source",
-    "duplicate_merged",
-    "conflict_resolved_by_authority",
-    "conflict_resolved_by_recency",
-    "conflict_resolved_by_majority",
-    "complementary_merge",
-    "unresolved_conflict",
-)
-SOURCE_TYPES = ("official", "community")
-ID_PREFIX = "kb-"
-ID_HASH_LEN = 16
-LEGACY_RE = re.compile(rf"^{ID_PREFIX}[0-9a-f]{{{ID_HASH_LEN}}}$")
+# Confidence bands — MUST match the Validator's status bands (tested).
+HIGH_MIN = 0.60
+MEDIUM_MIN = 0.30
 
-# Readable-filename slugging: common English glue words are dropped so slugs
-# read like topics ("amazon-ads-reporting-api-open-beta"), not sentences.
-STOPWORDS = frozenset({
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "in", "on", "at", "to", "of", "for", "with", "and", "or", "by", "as",
-    "from", "that", "this", "these", "those", "it", "its", "their", "can",
-    "will", "shall", "may", "might", "has", "have", "had", "do", "does",
-    "did", "not", "no", "nor", "so", "such", "than", "then", "there",
-    "here", "when", "while", "who", "whom", "whose", "which", "what",
-})
-SLUG_WORD_RE = re.compile(r"[a-z0-9]+")
-SLUG_MAX = 64
+# Related-concept links: shared source AND at least this token overlap.
+RELATED_MIN = 0.20
+RELATED_MAX = 5
 
 INDEX_HEADER = ["# Knowledge Index", "",
-                "| ID | Title | Status | Confidence | Last checked |",
-                "|----|-------|--------|------------|--------------|"]
+                "| Concept | Title | Type | Status | Confidence | Last checked |",
+                "|---------|-------|------|--------|------------|--------------|"]
 
 
 class PublisherError(ValueError):
@@ -121,106 +89,30 @@ class PublisherError(ValueError):
 # Contract validation — centralized; nothing downstream re-checks shapes.
 # --------------------------------------------------------------------------
 
-def _check_contract(facts: object) -> tuple[list[dict], list[dict]]:
-    """Split input into (publishable, skipped-rejected). Raises PublisherError
-    on malformed facts — never repairs them."""
-    if not isinstance(facts, list):
-        raise PublisherError("input must be a JSON array of fact objects")
-    publishable: list[dict] = []
-    skipped: list[dict] = []
-    for i, fact in enumerate(facts):
-        if not isinstance(fact, dict):
-            raise PublisherError(f"fact[{i}] is not an object")
-        if "status" not in fact:
-            raise PublisherError(f"fact[{i}]: missing 'status'")
-        if fact["status"] not in FACT_STATUSES:
+def _check_contract(merged: object) -> tuple[list[dict], list[dict]]:
+    """Split merger output into (concepts, rejected). Raises PublisherError
+    on malformed input — never repairs it."""
+    if isinstance(merged, list):  # tolerate a bare concepts array
+        merged = {"concepts": merged, "rejected": []}
+    if not isinstance(merged, dict) \
+            or not isinstance(merged.get("concepts"), list):
+        raise PublisherError(
+            "input must be Merger output: {'concepts': [...], 'rejected': [...]}")
+    rejected = merged.get("rejected", [])
+    if not isinstance(rejected, list):
+        raise PublisherError("'rejected' must be a list")
+    seen: set[str] = set()
+    for i, concept in enumerate(merged["concepts"]):
+        try:
+            concepts.check_concept(concept)
+        except concepts.ConceptError as exc:
+            raise PublisherError(f"concepts[{i}]: {exc}") from exc
+        if concept["id"] in seen:
             raise PublisherError(
-                f"fact[{i}]: status must be one of {FACT_STATUSES}, "
-                f"got {fact['status']!r}")
-        if fact["status"] == "rejected":
-            skipped.append(fact)
-            continue
-        content = fact.get("content")
-        if not isinstance(content, str) or not content.strip():
-            raise PublisherError(f"fact[{i}]: 'content' must be a non-empty string")
-        if "\n" in content or "\r" in content:
-            raise PublisherError(f"fact[{i}]: 'content' must be single-line "
-                                 "(multi-line content breaks OKF frontmatter)")
-        sources = fact.get("sources")
-        if not isinstance(sources, list) or not sources:
-            raise PublisherError(f"fact[{i}]: 'sources' must be a non-empty list")
-        for j, source in enumerate(sources):
-            if not isinstance(source, dict):
-                raise PublisherError(f"fact[{i}].sources[{j}] is not an object")
-            if not isinstance(source.get("url"), str) or not source["url"].strip():
-                raise PublisherError(
-                    f"fact[{i}].sources[{j}]: 'url' must be a non-empty string")
-            if source.get("date") is not None and not isinstance(source["date"], str):
-                raise PublisherError(
-                    f"fact[{i}].sources[{j}]: 'date' must be a string or null")
-            if source.get("source_type") not in SOURCE_TYPES:
-                raise PublisherError(
-                    f"fact[{i}].sources[{j}]: source_type must be one of "
-                    f"{SOURCE_TYPES}, got {source.get('source_type')!r}")
-        score = fact.get("confidence_score")
-        if isinstance(score, bool) or not isinstance(score, (int, float)):
-            raise PublisherError(
-                f"fact[{i}]: 'confidence_score' must be numeric, got {score!r}")
-        if not 0.0 <= float(score) <= 1.0:
-            raise PublisherError(
-                f"fact[{i}]: 'confidence_score' must be within [0, 1], got {score!r}")
-        if fact.get("resolution") not in RESOLUTIONS:
-            raise PublisherError(
-                f"fact[{i}]: resolution must be one of {RESOLUTIONS}, "
-                f"got {fact.get('resolution')!r}")
-        publishable.append(fact)
-    return publishable, skipped
-
-
-# --------------------------------------------------------------------------
-# Stable identity and readable filenames
-# --------------------------------------------------------------------------
-
-def fact_id(content: str) -> str:
-    """Stable document identity: content hash only. No timestamps, no RNG,
-    no filename involvement."""
-    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:ID_HASH_LEN]
-    return f"{ID_PREFIX}{digest}"
-
-
-def readable_slug(text: str) -> str:
-    """Deterministic kebab-case slug: lowercase words, stopwords dropped,
-    capped at SLUG_MAX on a word boundary. Empty input -> 'fact'."""
-    words = [w for w in SLUG_WORD_RE.findall(text.lower())
-             if w not in STOPWORDS]
-    slug = "-".join(words)
-    if len(slug) > SLUG_MAX:
-        slug = slug[:SLUG_MAX].rsplit("-", 1)[0]
-    return slug.strip("-") or "fact"
-
-
-def _slug_base(fact: dict) -> str:
-    """Prefer an explicit topic when the fact carries one; else its content."""
-    for key in ("topic_id", "topic"):
-        value = fact.get(key)
-        if isinstance(value, str) and value.strip():
-            return value
-    return fact["content"]
-
-
-def _claim_stem(slug: str, stable_id: str, stems: dict[str, str | None]) -> str:
-    """Reserve a unique filename stem for `stable_id`. On slug collision the
-    tail of the stable id disambiguates — two documents never share a file."""
-    candidates = [slug] if slug else []
-    if slug:
-        candidates.append(f"{slug}-{stable_id[-6:]}")
-    candidates.append(stable_id)
-    for candidate in candidates:
-        owner = stems.get(candidate)
-        if owner is None or owner == stable_id:
-            stems[candidate] = stable_id
-            return candidate
-    raise PublisherError(f"unable to reserve a filename for {stable_id}")
+                f"concepts[{i}]: duplicate id {concept['id']!r} — one "
+                f"document per topic, always")
+        seen.add(concept["id"])
+    return merged["concepts"], rejected
 
 
 # --------------------------------------------------------------------------
@@ -228,103 +120,87 @@ def _claim_stem(slug: str, stable_id: str, stems: dict[str, str | None]) -> str:
 # --------------------------------------------------------------------------
 
 def confidence_level(score: float) -> str:
-    """Map the numeric score onto OKF levels using the Validator's bands."""
-    if score >= 0.6:
+    """Map a numeric score onto OKF levels using the Validator's bands."""
+    if score >= HIGH_MIN:
         return "high"
-    if score >= 0.3:
+    if score >= MEDIUM_MIN:
         return "medium"
     return "low"
 
 
-def doc_status(sources: list[dict]) -> str:
-    return "official" if any(s["source_type"] == "official" for s in sources) \
-        else "community"
+def doc_status(concept: dict) -> str:
+    return "official" if any(s["source_type"] == "official"
+                             for f in concept["facts"]
+                             for s in f["sources"]) else "community"
 
 
-def build_document(fact: dict, last_checked: str) -> str:
-    """Render one fact as an OKF document. Content is never rewritten."""
-    content = fact["content"]
-    sources = sorted(fact["sources"], key=lambda s: s["url"])
+def concept_urls(concept: dict) -> list[str]:
+    return sorted({s["url"] for f in concept["facts"] for s in f["sources"]})
+
+
+def build_document(concept: dict, last_checked: str, related: list[str]) -> str:
+    """Render one concept as a full OKF document. Content is never rewritten."""
+    concept = dict(concept)
+    if not concept.get("title"):
+        concept["title"] = concepts.humanize(concept["id"])
     meta = {
-        "id": fact_id(content),
-        "title": content,
-        "sources": sorted({s["url"] for s in sources}),
-        "confidence": confidence_level(float(fact["confidence_score"])),
-        "status": doc_status(sources),
+        "id": concept["id"],
+        "title": concept["title"],
+        "type": concepts.CONCEPT_DOC_TYPE,
+        "sources": concept_urls(concept),
+        "confidence": confidence_level(
+            min(float(f["confidence_score"]) for f in concept["facts"])),
+        "status": doc_status(concept),
         "last_checked": last_checked,
     }
-    score = float(fact["confidence_score"])
-    body = [
-        f"# {content}",
-        "",
-        "## Details",
-        "",
-        content,
-        "",
-        f"- confidence_score: {score:.2f}",
-        f"- resolution: {fact['resolution']}",
-        f"- status: {fact['status']}",
-        "",
-        "## Sources",
-    ]
-    for source in sources:
-        date = source["date"] if source["date"] else "unknown"
-        body.append(f"- {source['url']} — {source['source_type']}, fetched {date}")
-    return okf.serialize(meta, "\n".join(body))
+    body = concepts.render_body(concept).rstrip("\n")
+    if related:
+        lines = ["## Related", ""]
+        lines.extend(f"- [{concepts.humanize(r)}](./{r}.md)" for r in related)
+        body += "\n\n" + "\n".join(lines)
+    return okf.serialize(meta, body)
+
+
+def _doc_tokens(concept: dict) -> frozenset[str]:
+    tokens = concepts.canonical_tokens(concept.get("title") or "")
+    for f in concept.get("facts", []):
+        tokens |= concepts.canonical_tokens(f["content"])
+    return tokens
+
+
+def related_concepts(cid: str, concept: dict,
+                     snapshot: dict[str, dict]) -> list[str]:
+    """Deterministic, evidence-backed cross-links: a concept is related to
+    another when they share at least one source URL AND their material
+    overlaps by >= RELATED_MIN. Top RELATED_MAX by (overlap desc, id asc)."""
+    mine_urls = {s["url"] for f in concept.get("facts", [])
+                 for s in f["sources"]}
+    mine_tokens = _doc_tokens(concept)
+    scored = []
+    for other_id, other in snapshot.items():
+        if other_id == cid:
+            continue
+        other_urls = {s["url"] for f in other.get("facts", [])
+                      for s in f["sources"]}
+        if not (mine_urls & other_urls):
+            continue  # no shared evidence -> no claimed relationship
+        overlap = concepts.jaccard(mine_tokens, _doc_tokens(other))
+        if overlap >= RELATED_MIN:
+            scored.append((overlap, other_id))
+    scored.sort(key=lambda pair: (-pair[0], pair[1]))
+    return [cid2 for _, cid2 in scored[:RELATED_MAX]]
 
 
 # --------------------------------------------------------------------------
-# knowledge/ scanning, migration, INDEX
+# INDEX / CHANGELOG
 # --------------------------------------------------------------------------
 
-def _scan_knowledge(kdir: Path) -> dict:
-    """Map the current bundle: stable id -> path, plus which stems are taken.
-    Unparseable files occupy their stem but have no identity."""
-    paths: dict[str, Path] = {}
-    titles: dict[str, str] = {}
-    stems: dict[str, str | None] = {}
-    for path in sorted(kdir.glob("*.md")):
-        if path.name in (INDEX_NAME, CHANGELOG_NAME):
-            continue
-        stems[path.stem] = None
-        try:
-            meta, _ = okf.parse(path.read_text(encoding="utf-8"))
-        except (okf.OkfError, OSError):
-            continue
-        stable = meta.get("id")
-        if isinstance(stable, str) and stable:
-            paths[stable] = path
-            titles[stable] = meta.get("title", "")
-            stems[path.stem] = stable
-    return {"paths": paths, "titles": titles, "stems": stems}
-
-
-def _migrate_legacy(kdir: Path, scan: dict) -> list[tuple[Path, Path]]:
-    """Rename opaque kb-<hash>.md files to readable slugs (same bytes, same
-    id) so old and new naming schemes never coexist."""
-    renames: list[tuple[Path, Path]] = []
-    for stable in sorted(scan["paths"]):
-        path = scan["paths"][stable]
-        if not LEGACY_RE.match(path.stem):
-            continue
-        slug = readable_slug(scan["titles"].get(stable, stable))
-        stem = _claim_stem(slug, stable, scan["stems"])
-        new_path = kdir / f"{stem}.md"
-        if new_path == path or new_path.exists():
-            continue
-        path.rename(new_path)
-        scan["stems"].pop(path.stem, None)
-        scan["paths"][stable] = new_path
-        renames.append((path, new_path))
-        logger.info("migrated %s -> %s (id %s unchanged)", path.name,
-                    new_path.name, stable)
-    return renames
-
-
-def _rebuild_index(kdir: Path) -> str:
-    """Regenerate INDEX.md from the actual directory contents. Rows for
-    parseable documents are rebuilt in canonical form (links use real
-    filenames); rows for unparseable files are preserved verbatim."""
+def _rebuild_index(kdir: Path, snapshot: dict[str, dict],
+                   written: dict[str, dict]) -> str:
+    """Regenerate INDEX.md from the final bundle state: every concept in the
+    snapshot or written this run gets exactly one canonical row; rows for
+    unparseable legacy files are preserved verbatim so nothing vanishes from
+    the catalog before the migration rebuild removes them for real."""
     index_path = kdir / INDEX_NAME
     preserve: dict[str, str] = {}
     if index_path.exists():
@@ -332,20 +208,38 @@ def _rebuild_index(kdir: Path) -> str:
             stripped = line.strip()
             if stripped.startswith("| [") and "](./" in stripped:
                 preserve[stripped.split("](./", 1)[1].split(".md)", 1)[0]] = line
+
+    final = dict(snapshot)
+    final.update(written)
     rows = []
+    listed_stems: set[str] = set()
+    for cid in sorted(final):
+        meta = {
+            "title": final[cid].get("title") or concepts.humanize(cid),
+            "status": final[cid].get("status") or doc_status(final[cid]),
+            "confidence": final[cid].get("confidence")
+            or confidence_level(min(float(f["confidence_score"])
+                                    for f in final[cid]["facts"])),
+            "last_checked": final[cid].get("last_checked", ""),
+        }
+        title = meta["title"].replace("|", "\\|")
+        rows.append(f"| [{cid}](./{cid}.md) | {title} | concept "
+                    f"| {meta['status']} | {meta['confidence']} "
+                    f"| {meta['last_checked']} |")
+        listed_stems.add(cid)
     for path in sorted(kdir.glob("*.md")):
-        if path.name in (INDEX_NAME, CHANGELOG_NAME):
+        if path.name in (INDEX_NAME, CHANGELOG_NAME) or path.stem in listed_stems:
             continue
         try:
             meta, _ = okf.parse(path.read_text(encoding="utf-8"))
         except (okf.OkfError, OSError):
             if path.stem in preserve:
-                rows.append(preserve[path.stem])
+                rows.append(preserve[path.stem])  # legacy row, kept verbatim
             continue
-        title = meta["title"].replace("|", "\\|")
-        rows.append(f"| [{path.stem}](./{path.name}) | {title} "
-                    f"| {meta['status']} | {meta['confidence']} "
-                    f"| {meta['last_checked']} |")
+        if meta.get("type") == concepts.CONCEPT_DOC_TYPE:
+            continue  # parseable concept not in snapshot: stale duplicate
+        if path.stem in preserve:
+            rows.append(preserve[path.stem])
     return "\n".join(INDEX_HEADER + rows) + "\n"
 
 
@@ -355,13 +249,17 @@ def _render_changelog(kdir: Path, entries: list[tuple[str, dict, str]],
     path = kdir / CHANGELOG_NAME
     text = path.read_text(encoding="utf-8") if path.exists() else "# Changelog\n"
     bullets = []
-    for action, fact, _ in sorted(entries, key=lambda e: fact_id(e[1]["content"])):
-        fid = fact_id(fact["content"])
-        urls = ", ".join(sorted({s["url"] for s in fact["sources"]}))
+    for action, concept, _ in sorted(entries, key=lambda e: e[1]["id"]):
+        resolutions = sorted({f["resolution"] for f in concept["facts"]} |
+                             {c["resolution"] for c in concept["conflicts"]})
+        urls = ", ".join(concept_urls(concept))
         bullets.append(
-            f"- **{fid}** — {action}. resolution={fact['resolution']}, "
-            f"confidence_score={float(fact['confidence_score']):.2f}, "
-            f"status={fact['status']}.\n  Sources: {urls}")
+            f"- **{concept['id']}** — {action}. {len(concept['facts'])} fact"
+            f"{'s' if len(concept['facts']) != 1 else ''}, "
+            f"{len(concept['conflicts'])} recorded conflict"
+            f"{'s' if len(concept['conflicts']) != 1 else ''}. "
+            f"resolutions: {', '.join(resolutions)}.\n"
+            f"  Sources: {urls}")
     heading = f"## {today}"
     lines = text.splitlines()
     for i, line in enumerate(lines):
@@ -395,109 +293,123 @@ def _stage_and_replace(writes: dict[Path, str]) -> None:
         raise
 
 
-def publish_facts(
-    facts: list[dict],
+def publish_concepts(
+    merged: dict | list,
     knowledge_dir: str | Path = DEFAULT_KNOWLEDGE_PATH,
     now: datetime.datetime | None = None,
 ) -> dict:
-    """Publish Merger output into knowledge/. Returns the audit report.
+    """Publish Merger concept output into knowledge/. Returns the report.
 
     `now` (timezone-aware) only stamps the report's last_run and last_checked
-    of genuinely changed documents — it never influences document identity or
-    filenames.
+    of genuinely changed documents — it never influences identity.
     """
     now = now or datetime.datetime.now(datetime.UTC)
     if now.tzinfo is None:
         raise PublisherError("'now' must be timezone-aware")
     today = now.date().isoformat()
 
-    publishable, skipped = _check_contract(facts)
+    publishable, skipped = _check_contract(merged)
     kdir = Path(knowledge_dir)
     kdir.mkdir(parents=True, exist_ok=True)
 
-    scan = _scan_knowledge(kdir)
-    renames = _migrate_legacy(kdir, scan)
+    snapshot = concepts.load_bundle(kdir)
 
     counts = {"published": 0, "updated": 0, "unchanged": 0}
     writes: dict[Path, str] = {}
+    written_concepts: dict[str, dict] = {}
     changelog_entries: list[tuple[str, dict, str]] = []
 
-    for fact in publishable:
-        stable = fact_id(fact["content"])
-        # Existing documents are updated in place — the filename never churns.
-        path = scan["paths"].get(stable)
-        if path is None:
-            stem = _claim_stem(readable_slug(_slug_base(fact)), stable,
-                               scan["stems"])
-            path = kdir / f"{stem}.md"
-            scan["paths"][stable] = path
+    # Pass 1: render every document (with preserved last_checked) and decide
+    # published / updated / unchanged by byte comparison.
+    drafts: dict[str, tuple[str, str]] = {}  # cid -> (text_with_old_date, old_date)
+    for concept in publishable:
+        cid = concept["id"]
+        path = kdir / f"{cid}.md"
+        prior_date = snapshot.get(cid, {}).get("last_checked")
+        drafts[cid] = (build_document(concept, prior_date or today, []), prior_date)
 
-        current = writes.get(path)
-        if current is None and path.exists():
+    # Related links are computed against the FINAL snapshot (existing docs
+    # updated with this run's concepts), then baked into the rendered docs.
+    final_snapshot = dict(snapshot)
+    for concept in publishable:
+        final_snapshot[concept["id"]] = {**concept, "last_checked": today}
+    for concept in publishable:
+        cid = concept["id"]
+        related = related_concepts(cid, concept, final_snapshot)
+        path = kdir / f"{cid}.md"
+        prior_date = drafts[cid][1]
+        current = None
+        if path.exists():
             current = path.read_text(encoding="utf-8")
-
+        candidate = build_document(concept, prior_date or today, related)
+        if current is not None and candidate == current:
+            counts["unchanged"] += 1
+            logger.info("unchanged %s", cid)
+            continue
+        final_text = build_document(concept, today, related)
+        writes[path] = final_text
+        written_concepts[cid] = concept
         if current is None:
-            writes[path] = build_document(fact, today)
             counts["published"] += 1
-            changelog_entries.append(("created", fact, today))
-            logger.info("published %s at %s (%s)", stable, path.name,
-                        fact["resolution"])
+            changelog_entries.append(("created", concept, today))
+            logger.info("published %s (%d facts)", cid, len(concept["facts"]))
         else:
-            try:
-                meta, _ = okf.parse(current)
-                prior_date = meta["last_checked"]
-            except okf.OkfError:
-                prior_date = None  # unparseable existing doc: rewrite it
-                logger.warning("%s exists but does not parse as OKF; rewriting",
-                               path.name)
-            if prior_date and build_document(fact, prior_date) == current:
-                counts["unchanged"] += 1
-                logger.info("unchanged %s at %s", stable, path.name)
-            else:
-                writes[path] = build_document(fact, today)
-                counts["updated"] += 1
-                changelog_entries.append(("updated", fact, today))
-                logger.info("updated %s at %s", stable, path.name)
+            counts["updated"] += 1
+            changelog_entries.append(("updated", concept, today))
+            logger.info("updated %s (%d facts)", cid, len(concept["facts"]))
 
     for fact in skipped:
         logger.info("skipped rejected fact: %s", str(fact.get("content"))[:80])
 
+    # Pass 2: complete-bundle validation BEFORE anything is staged. Every
+    # rendered document must re-parse as valid OKF; INDEX rows must exist.
+    for path, text in writes.items():
+        try:
+            okf.parse(text, path)
+        except okf.OkfError as exc:
+            raise PublisherError(f"rendered document failed OKF validation: "
+                                 f"{exc}") from exc
+
     index_written = False
+    changelog_written = False
     if writes:
-        _stage_and_replace(writes)
-    if writes or renames:
+        new_index = _rebuild_index(kdir, snapshot, written_concepts)
         index_path = kdir / INDEX_NAME
-        new_index = _rebuild_index(kdir)
         old_index = index_path.read_text(encoding="utf-8") \
             if index_path.exists() else None
-        extra: dict[Path, str] = {}
         if new_index != old_index:
-            extra[index_path] = new_index
+            writes[index_path] = new_index
             index_written = True
         if changelog_entries:
-            extra[kdir / CHANGELOG_NAME] = _render_changelog(
+            writes[kdir / CHANGELOG_NAME] = _render_changelog(
                 kdir, changelog_entries, today)
-        if extra:
-            _stage_and_replace(extra)
-    if not writes and not renames:
-        logger.info("nothing published, updated or migrated; knowledge/ untouched")
+            changelog_written = True
+        # One atomic batch: documents + INDEX + CHANGELOG together.
+        _stage_and_replace(writes)
+    else:
+        logger.info("nothing published or updated; knowledge/ untouched")
 
     report = {
-        "input": len(facts),
+        "input": len(publishable),
         "published": counts["published"],
         "updated": counts["updated"],
         "unchanged": counts["unchanged"],
         "skipped": len(skipped),
-        "renamed": len(renames),
         "index_updated": index_written,
-        "documents": sorted(str(p) for p in writes),
+        "changelog_updated": changelog_written,
+        "documents": sorted(str(p) for p in writes
+                            if p.name not in (INDEX_NAME, CHANGELOG_NAME)),
         "last_run": now.isoformat(timespec="seconds"),
     }
-    logger.info("report: %d input -> %d published, %d updated, %d unchanged, "
-                "%d skipped, %d renamed", report["input"], report["published"],
-                report["updated"], report["unchanged"], report["skipped"],
-                report["renamed"])
+    logger.info("report: %d concepts -> %d published, %d updated, %d unchanged, "
+                "%d rejected", report["input"], report["published"],
+                report["updated"], report["unchanged"], report["skipped"])
     return report
+
+
+# Backwards-compatible alias: the stage still publishes Merger output; only
+# the shape changed from raw facts to concepts.
+publish_facts = publish_concepts
 
 
 # --------------------------------------------------------------------------
@@ -506,33 +418,31 @@ def publish_facts(
 
 def main(argv: list[str] | None = None,
          knowledge_dir: str | Path = DEFAULT_KNOWLEDGE_PATH) -> int:
-    """CLI entry point: python3 -m pipeline.publisher MERGED_FACTS_JSON
+    """CLI entry point: python3 -m pipeline.publisher MERGED_CONCEPTS_JSON
 
-    MERGED_FACTS_JSON is a file with a JSON array of Merger facts (or
-    {"facts": [...]}) or "-" for stdin. Prints the publication report as JSON.
+    MERGED_CONCEPTS_JSON is a file with Merger output (or a bare concepts
+    array, or "-" for stdin). Prints the publication report as JSON.
     Exit 0 on success; 2 on invalid input.
     """
     parser = argparse.ArgumentParser(
-        description="Publish merged facts into knowledge/ as OKF documents "
-                    "(deterministic; no LLM).")
-    parser.add_argument("facts", metavar="MERGED_FACTS_JSON",
-                        help="JSON array of merged facts, or '-' for stdin")
+        description="Publish merged concepts into knowledge/ as OKF "
+                    "documents (deterministic; no LLM).")
+    parser.add_argument("concepts", metavar="MERGED_CONCEPTS_JSON",
+                        help="Merger output JSON, or '-' for stdin")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")
 
-    raw = sys.stdin.read() if args.facts == "-" \
-        else Path(args.facts).read_text(encoding="utf-8")
+    raw = sys.stdin.read() if args.concepts == "-" \
+        else Path(args.concepts).read_text(encoding="utf-8")
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         print(f"error: invalid JSON input: {exc}", file=sys.stderr)
         return 2
-    if isinstance(data, dict) and isinstance(data.get("facts"), list):
-        data = data["facts"]
     try:
-        report = publish_facts(data, knowledge_dir=knowledge_dir)
+        report = publish_concepts(data, knowledge_dir=knowledge_dir)
     except PublisherError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

@@ -10,27 +10,42 @@ running it twice must not duplicate content — only real changes should be
 applied.
 
 ## Pipeline
-1. **Discover** — find candidate sources (docs pages, blog posts, API
-   changelogs, repos, MCP server listings) related to Amazon Ads.
+1. **Fetch** — download each source, fingerprint it, detect change
+   (new / changed / unchanged). Unchanged sources stop here; nothing
+   downstream runs. A new hash is staged as *pending* and committed only
+   after publication succeeds, so a failed run is always retried.
 2. **Extract** — pull discrete factual claims out of each source. Every claim
-   must carry a source URL and a fetch/check timestamp.
-3. **Validate** — compare each extracted fact against what's already in
-   `knowledge/`. Determine: new fact, confirms existing fact, contradicts
-   existing fact, or no-op (unchanged since last check).
-4. **Merge** — one OKF document per concept/topic. If N sources describe the
-   same concept, produce ONE document referencing all N sources — never
-   duplicate documents for the same topic. On conflicts, prefer official
-   Amazon sources and note the disagreement explicitly in the doc.
-5. **Publish** — write/update OKF markdown documents in `knowledge/`, update
-   the index (`knowledge/INDEX.md`) and change log (`knowledge/CHANGELOG.md`).
+   must carry a source URL, a fetch timestamp, and a verbatim supporting
+   quote.
+3. **Adapter** — deterministic reshaping of claims into Validator facts
+   (source typing, dates, stability signals).
+4. **Validate** — score each fact with fixed trust arithmetic; stamp it
+   valid / valid_low_confidence / rejected. This scores the current batch
+   only; comparison against the maintained bundle happens in Merge.
+5. **Merge** — fold new facts into CONCEPTS by matching them against the
+   existing knowledge documents (deterministic candidate filtering first,
+   the LLM seam only for ambiguous matches). One concept per topic: if N
+   sources describe the same concept, they contribute facts and sources to
+   ONE concept — never duplicate documents. Conflicts are resolved by
+   fixed precedence (official > newer > majority) with the losing value
+   retained, dated, and attributed — never silently erased; complete ties
+   keep both sides, stamped `unresolved_conflict`.
+6. **Publish** — write/update one OKF concept document per concept in
+   `knowledge/`, update the index (`knowledge/INDEX.md`) and change log
+   (`knowledge/CHANGELOG.md`) in the same atomic batch.
+
+Discovery (finding candidate URLs for a topic) exists as the optional Scout
+agent and is NOT wired into this flow — the pipeline starts at Fetch with
+URLs the user provides.
 
 ## OKF document format
 Every document in `knowledge/` is plain markdown with YAML frontmatter:
 
 ```yaml
 ---
-id: sponsored-products-overview      # stable slug, never changes once assigned
+id: sponsored-products-overview      # stable concept slug, never changes once assigned
 title: Sponsored Products Overview
+type: concept                        # required by OKF v0.1; the only type in this bundle
 sources:
   - https://advertising.amazon.com/...
 confidence: high                     # low | medium | high
@@ -40,41 +55,57 @@ last_checked: 2026-09-26             # ISO date, only updated when content chang
 ```
 
 Body structure:
-- Concise concept explanation (what it is, why it matters).
-- `## Details` — the actual facts, organized by subtopic if needed.
-- `## Sources` — list each source URL with what it specifically confirmed.
-- Cross-link related concepts with relative markdown links to other `id`s
-  in `knowledge/`, e.g. `[Sponsored Display](./sponsored-display.md)`.
+- `## Details` → `### Facts` — each fact verbatim, with per-fact provenance
+  (confidence_score, status, resolution, first_seen, sources with fetch
+  dates). A concept holds multiple complementary facts.
+- `### Conflicts` — superseded facts, kept with their provenance and what
+  superseded them (only present when a conflict occurred).
+- `## Sources` — each source URL with type, fetch date, and what it
+  confirmed.
+- `## Related` — cross-links to other concepts, generated only from real
+  evidence (shared source plus topical overlap), e.g.
+  `[Sponsored Display](./sponsored-display.md)`.
+
+**Identity rule**: the `id` is the concept's identity. It is assigned when
+the concept is first coined and adopted thereafter via concept matching —
+it must NEVER be derived from the final sentence wording (rewording a
+source must update the same document, not create a new one).
 
 ## Safe-to-re-run contract (hard requirement)
-- Before writing anything, check whether a document already exists for that
-  topic by its `id` — not by guessing a filename.
+- Before writing anything, the pipeline matches new facts against the
+  existing bundle by concept identity (`id`) — never by guessing a filename
+  and never by hashing the sentence wording.
 - If the newly extracted content is unchanged from what's already recorded,
   **skip the write entirely** — do not touch the file, do not bump
   `last_checked`.
-- If content changed, update the existing document in place and record what
-  changed in `knowledge/CHANGELOG.md` (date, doc id, what changed, source).
-- Never create a second document for a topic that already has one. Always
-  merge into the existing one.
+- If content changed, update the existing concept document in place and
+  record what changed in `knowledge/CHANGELOG.md` (date, concept id, what
+  changed, sources).
+- Never create a second document for a concept that already has one. Always
+  merge into the existing one — reworded extractions and changed values
+  included (changed values become dated, attributed conflicts).
 
 ## Division of labor: code vs. Claude judgment
 - **Code (deterministic, testable)**: fetching pages/URLs, hashing content to
-  detect real changes, file I/O, OKF frontmatter validation, generating the
-  index and changelog.
-- **Claude / subagents (fuzzy judgment)**: deciding what counts as one
-  "concept" vs. several, extracting facts from raw text, resolving
-  conflicting claims between sources, writing the final prose for each doc.
+  detect real changes, file I/O, OKF frontmatter validation, concept
+  candidate filtering, conflict precedence, generating the index and
+  changelog.
+- **Claude (fuzzy judgment, isolated behind three mockable seams)**:
+  extracting facts from raw text (`pipeline/extractor.py`), classifying
+  fact-pair relationships (`pipeline/merger.py`), deciding ambiguous
+  concept matches (`pipeline/concepts.py`). Claude never decides winners,
+  scores, identities, or file writes.
 
 ## Subagents
-Defined under `.claude/agents/` — one per pipeline stage:
-- `scout` — Discover
-- `extractor` — Extract
-- `validator` — Validate
-- `merger` — Merge
-- `publisher` — Publish
+`.claude/agents/` contains exactly ONE runnable Claude Code agent:
+- `scout` (`Discovery_Agent.md`) — optional source discovery for a topic.
+  It is NOT part of the production flow, which starts at Fetch with URLs
+  the user provides via `claude -p "ingest <url>, update the bundle"`.
 
-Each agent should hand off structured data (not prose) to the next stage
-wherever possible, to keep the pipeline testable and re-runnable.
+The pipeline stages themselves are Python modules under `pipeline/`, not
+agents; their Claude-facing parts are the three LLM seams listed above,
+each invoked as a one-shot `claude -p` subprocess and each fakeable in
+tests. Stage documentation lives in `.claude/skills/`.
 
 ## Hard requirements
 - No fact enters `knowledge/` without a traceable source URL.

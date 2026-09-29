@@ -1,5 +1,41 @@
 # Verification Evidence
 
+## Current evidence (post-remediation architecture, 2026-09-29)
+
+These describe the CURRENT concept-based pipeline and were produced during
+the remediation session's verification runs, in isolated temporary
+sandboxes (production `knowledge/` and `state/` untouched):
+
+- [`phase2-real-ingest.md`](./phase2-real-ingest.md) — three genuinely
+  different real source types (Amazon Ads docs page, GitHub repository
+  page, raw GitHub Markdown) end-to-end: 43 facts → 36 valid /
+  1 valid_low_confidence / 6 rejected → 7 concepts published, lint clean.
+  Includes the honest record of 3 LLM concept-match timeouts whose
+  fail-safe kept those facts separate.
+- [`phase3-idempotency.md`](./phase3-idempotency.md) — exact rerun of the
+  same three sources: all `unchanged`, stopped at Fetch, 0 Extractor LLM
+  calls (measured), bundle byte-identical (SHA-256 of all 9 files).
+- [`phase4-changed-source.md`](./phase4-changed-source.md) — controlled
+  (synthetic) fetcher seam, real LLM seams: a changed value updates the
+  same concept with the old value retained as a dated conflict; reworded
+  and identical claims create no duplicates. Declares its synthetic-source
+  limitation plainly.
+
+`verify-ingest.sh` in this directory is the reusable driver script for
+re-running the real-ingest and byte-identity checks (phase 1/phase 2 of
+that script).
+
+---
+
+## Historical evidence (PRE-REMEDIATION architecture, 2026-09-27)
+
+Everything below this line documents the superseded system: one extracted
+sentence per document, content-hash document ids (`kb-<hash>`), and the
+pre-concept Merger/Publisher. It remains as a faithful record of that
+earlier state and of the pipeline's foundational behaviors (real-LLM
+rerun/short-circuit, dedup, integrity), but its document model and
+pipeline details NO LONGER match the current code.
+
 **Project:** Amazon Ads Knowledge Acquisition System (`/Users/priyanshurajput/amazon-ads-kb`)
 **Verification date:** 2026-09-27 (UTC) · **Python:** 3.14.7 · **claude CLI:** 2.1.282 · **tvly:** 0.1.8
 **Repository state after verification:** no tracked file modified (git clean except this untracked `evidence/` directory); production `state/` and `knowledge/` untouched — all experiments ran in `/tmp/kb-evidence/` sandboxes.

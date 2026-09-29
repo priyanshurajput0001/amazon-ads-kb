@@ -3,12 +3,12 @@
 > Reference documentation for the orchestration driver — not a runnable
 > agent. The code lives in `pipeline/orchestrate.py`, the user-facing
 > command definition in
-> [`fetch-update-bundle/SKILL.md`](./fetch-update-bundle/SKILL.md).
+> [`ingest-update-bundle/SKILL.md`](./ingest-update-bundle/SKILL.md).
 
 ## Purpose
 
 The Orchestrator is the conductor of the whole pipeline. When the user says
-`"fetch <url>, update the bundle"`, it runs the existing stages in the right
+`"ingest <url>, update the bundle"`, it runs the existing stages in the right
 order and stops where stopping is correct — it contains **no pipeline logic
 of its own**, only sequencing.
 
@@ -36,7 +36,8 @@ One or more URLs from the user, plus the pipeline's saved state
 3. **Extract** the claims from that URL's content (real Claude).
 4. **Adapt** the claims into Validator facts (plain code).
 5. **Validate** all adapted facts together (plain rules).
-6. **Merge** related facts (Claude classifies pairs; rules resolve).
+6. **Merge** new facts INTO the existing concepts (Claude classifies
+   pairs and concept matches; rules resolve).
 7. **Publish** the result into `knowledge/`.
 8. Produce one JSON report covering every URL and stage.
 
@@ -51,6 +52,10 @@ One or more URLs from the user, plus the pipeline's saved state
 * A failure in a shared stage (Validate/Merge/Publish) aborts the run
   BEFORE publishing, so a half-finished run can never corrupt the knowledge
   bundle.
+* Fetch fingerprints are committed only AFTER publication succeeds, so a
+  failed run is retried on the next one instead of being skipped.
+* The user-facing command is `ingest`; the downloading stage is still
+  named Fetch internally.
 * Extraction and pair-classification use the real Claude model by default;
   tests inject fakes through the same seams.
 
@@ -70,7 +75,7 @@ publication counts, and whether the knowledge bundle changed.
 
 ## Example
 
-`claude -p "fetch https://advertising.amazon.com/about-api, update the
+`claude -p "ingest https://advertising.amazon.com/about-api, update the
 bundle"` on an unchanged page → report says: fetch `unchanged`,
 `stopped_at: fetch`, stages `[fetch]`, knowledge bundle modified: `false`.
 On a changed page → all six stages run and the report shows the new
@@ -79,6 +84,6 @@ documents published.
 ## Implementation
 
 `pipeline/orchestrate.py` (`orchestrate`, `main`); the command definition in
-[`.claude/skills/fetch-update-bundle/SKILL.md`](./fetch-update-bundle/SKILL.md);
+[`.claude/skills/ingest-update-bundle/SKILL.md`](./ingest-update-bundle/SKILL.md);
 the permission allow-list in `.claude/settings.json`. Tests:
 `tests/test_orchestrate.py`.

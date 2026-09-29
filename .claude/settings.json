@@ -8,6 +8,7 @@
       "Bash(python3 -m pipeline.validator:*)",
       "Bash(python3 -m pipeline.merger:*)",
       "Bash(python3 -m pipeline.publisher:*)",
+      "Bash(python3 -m pipeline.rebuild:*)",
       "Bash(python3 -m unittest:*)"
     ]
   }

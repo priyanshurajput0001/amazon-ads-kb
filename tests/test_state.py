@@ -11,6 +11,7 @@ from pipeline.state import (
     StateError,
     apply_result,
     classify,
+    commit_state,
     load_state,
     save_state,
     update_state,
@@ -117,14 +118,16 @@ class ClassifyTests(unittest.TestCase):
 
 
 class ApplyTests(unittest.TestCase):
-    def test_ok_result_stores_hash_status_and_strategy(self):
+    def test_ok_result_stages_hash_as_pending(self):
         states: dict = {}
         verdict = apply_result(states, ok_result("https://a", "hello"), T0)
         self.assertEqual(verdict, "new")
-        self.assertEqual(states["https://a"].sha256, sha("hello"))
+        # Two-phase commit: a fetched hash is PENDING until commit_state().
+        self.assertIsNone(states["https://a"].sha256)
+        self.assertEqual(states["https://a"].pending_sha256, sha("hello"))
         self.assertEqual(states["https://a"].status, "ok")
-        self.assertEqual(states["https://a"].strategy, "tvly-basic")
-        self.assertEqual(states["https://a"].fetched_at, T0)
+        self.assertEqual(states["https://a"].pending_strategy, "tvly-basic")
+        self.assertEqual(states["https://a"].pending_fetched_at, T0)
 
     def test_error_result_records_failure(self):
         states: dict = {}
@@ -134,9 +137,12 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(states["https://a"].error, "all fetch strategies failed")
         self.assertIsNone(states["https://a"].sha256)
 
-    def test_error_after_ok_preserves_last_known_hash(self):
+    def test_error_after_commit_preserves_last_known_hash(self):
         states: dict = {}
         apply_result(states, ok_result("https://a", "hello"), T0)
+        states["https://a"] = SourceState(  # simulate the post-publish commit
+            url="https://a", status="ok", fetched_at=T0,
+            sha256=sha("hello"), strategy="tvly-basic")
         apply_result(states, err_result("https://a"), T1)
         self.assertEqual(states["https://a"].sha256, sha("hello"))
         self.assertEqual(states["https://a"].status, "error")
@@ -163,15 +169,25 @@ class UpdateStateTests(unittest.TestCase):
         self.assertEqual(verdicts, {"https://a": "new", "https://b": "error"})
         self.assertEqual(set(load_state(self.path)), {"https://a", "https://b"})
 
-    def test_second_run_identical_content_is_unchanged(self):
+    def test_second_run_identical_content_is_unchanged_after_commit(self):
         update_state(self.path, [ok_result("https://a", "hello")], T0)
+        commit_state(self.path)  # publish succeeded
         verdicts = update_state(
             self.path, [ok_result("https://a", "hello", fetched_at=T1)], T1)
         self.assertEqual(verdicts, {"https://a": "unchanged"})
         self.assertEqual(load_state(self.path)["https://a"].fetched_at, T1)
 
-    def test_second_run_modified_content_is_changed(self):
+    def test_without_commit_refetch_stays_new(self):
+        # The crash-safety property at update_state level: no commit after a
+        # failed run means the next fetch of the same content is "new" again.
         update_state(self.path, [ok_result("https://a", "hello")], T0)
+        verdicts = update_state(
+            self.path, [ok_result("https://a", "hello", fetched_at=T1)], T1)
+        self.assertEqual(verdicts, {"https://a": "new"})
+
+    def test_second_run_modified_content_is_changed_after_commit(self):
+        update_state(self.path, [ok_result("https://a", "hello")], T0)
+        commit_state(self.path)
         verdicts = update_state(
             self.path, [ok_result("https://a", "hello v2", fetched_at=T1)], T1)
         self.assertEqual(verdicts, {"https://a": "changed"})

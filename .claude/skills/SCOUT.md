@@ -18,7 +18,7 @@ Refer to this document (or invoke the Scout agent) when the user asks to
 *find*, *discover*, or *suggest sources* for a topic. Do **not** use Scout
 in the normal pipeline flow: the current production flow starts when the
 user provides URLs directly — Scout is available but not automatically
-wired into the `fetch <url>` execution path.
+wired into the `ingest <url>` execution path.
 
 ## Input
 
@@ -26,7 +26,7 @@ A topic in plain words, e.g. "Amazon Marketing Stream".
 
 ## Process
 
-1. Runs a web search for the topic (via the Tavily search tool).
+1. Runs a web search for the topic (`tvly search`, the Tavily CLI).
 2. Judges each result's quality from its title and snippet — official
    Amazon documentation ranks highest, reputable third-party guides next,
    community sources last, content farms are discarded.
@@ -55,7 +55,7 @@ downstream depends on Scout, so nothing else breaks.
 
 User: "find sources about Amazon Marketing Stream" → Scout returns 3–6
 candidate URLs, which the user can then feed to
-`claude -p "fetch <url>, update the bundle"`.
+`claude -p "ingest <url>, update the bundle"`.
 
 ## Implementation
 
