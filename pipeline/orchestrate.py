@@ -166,7 +166,7 @@ def orchestrate(
         url = entry["url"]
         if url not in extracted_urls:
             continue
-        adapted = adapt_url(url, states, claims_path)
+        adapted = adapt_url(url, states, claims_path, cache_dir=cache_path)
         entry["adapter"] = {"status": adapted["status"],
                             "fact_count": adapted.get("fact_count", 0)}
         if adapted["status"] == "ok":

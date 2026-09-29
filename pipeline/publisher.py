@@ -172,7 +172,19 @@ def related_concepts(cid: str, concept: dict,
                      snapshot: dict[str, dict]) -> list[str]:
     """Deterministic, evidence-backed cross-links: a concept is related to
     another when they share at least one source URL AND their material
-    overlaps by >= RELATED_MIN. Top RELATED_MAX by (overlap desc, id asc)."""
+    overlaps by >= RELATED_MIN. Top RELATED_MAX by (overlap desc, id asc).
+
+    Measured justification for the conservative threshold (2026-09-29, the
+    real 7-concept fresh-ingest bundle): all 21 concept pairs shared their
+    source (one multi-topic documentation page), yet token overlap ranged
+    0.028-0.156 — below RELATED_MIN — because those concepts are separate
+    precisely because they cover DIFFERENT subjects of that page (onboarding
+    vs endpoints vs release notes vs use cases). Shared-source alone would
+    have linked everything-from-the-same-page, which is link spam, not
+    evidence of relatedness. Bundles whose concepts genuinely overlap
+    (e.g. the production 37-concept bundle) do produce links under this
+    rule. Zero links in a fresh single-page bundle is the correct outcome,
+    not a defect."""
     mine_urls = {s["url"] for f in concept.get("facts", [])
                  for s in f["sources"]}
     mine_tokens = _doc_tokens(concept)

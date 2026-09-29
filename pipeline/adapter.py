@@ -48,7 +48,7 @@ import sys
 from pathlib import Path
 
 from pipeline.extractor import DEFAULT_CLAIMS_PATH
-from pipeline.fetch import DEFAULT_STATE_PATH
+from pipeline.fetch import DEFAULT_CACHE_PATH, DEFAULT_STATE_PATH
 from pipeline.state import SourceState, load_state
 
 logger = logging.getLogger("pipeline.adapter")  # stable name when run as -m
@@ -56,22 +56,62 @@ logger = logging.getLogger("pipeline.adapter")  # stable name when run as -m
 OFFICIAL_HOSTS = ("advertising.amazon.com",)
 OFFICIAL_URL_PREFIXES = ("https://github.com/amzn",)  # amzn org root and subpaths
 
+# Content self-provenance (review: "classify sources by page content, not a
+# host list"). A source that is not on a known-official host is OFFICIAL
+# when its own fetched content (a) points at the official Amazon Ads
+# documentation site and (b) declares Amazon ownership in its own voice,
+# via this fixed, auditable marker list. Deterministic string evidence —
+# never an LLM judgment. Authority follows the CONTENT, so the transport
+# (raw.githubusercontent.com, a mirror, ...) can no longer mask an
+# Amazon-owned source, and third-party pages that merely LINK to Amazon
+# docs without owning voice stay community.
+OFFICIAL_DOCS_HOST_REFERENCES = tuple(
+    f"https://{host}" for host in OFFICIAL_HOSTS)
+AMAZON_OWNERSHIP_MARKERS = (
+    "© amazon", "copyright amazon", "copyright © amazon",
+    "amazon.com, inc.", "maintained by amazon", "an amazon company",
+    "this repository contains", "this repository will be",
+)
+
 
 class AdapterError(ValueError):
     """An input violates the Adapter contract (bad claims doc shape)."""
+
+
+def _declares_amazon_provenance(content: str | None) -> bool:
+    """True when the fetched content itself proves Amazon provenance:
+    a canonical pointer to the official docs host AND an ownership
+    declaration in the content's own voice."""
+    if not content:
+        return False
+    text = content.lower()
+    if not any(ref in text for ref in OFFICIAL_DOCS_HOST_REFERENCES):
+        return False
+    return any(marker in text for marker in AMAZON_OWNERSHIP_MARKERS)
 
 
 def classify_source_type(
     url: str,
     official_hosts: tuple[str, ...] = OFFICIAL_HOSTS,
     official_url_prefixes: tuple[str, ...] = OFFICIAL_URL_PREFIXES,
+    content: str | None = None,
 ) -> str:
-    """Explicit, dumb-on-purpose source classification. No heuristics."""
+    """Deterministic source classification, in order:
+    1. the official Amazon Ads documentation hosts (source of truth);
+    2. Amazon's GitHub organization pages (existing rule, kept);
+    3. CONTENT EVIDENCE: any other source whose fetched content declares
+       Amazon provenance (canonical docs pointer + ownership voice) —
+       so the URL transport never decides authority by itself;
+    everything else is community."""
     host = url.split("//", 1)[-1].split("/", 1)[0].lower()
     if host in (h.lower() for h in official_hosts):
         return "official"
     if any(url == p or url.startswith(p.rstrip("/") + "/")
            for p in official_url_prefixes):
+        return "official"
+    if _declares_amazon_provenance(content):
+        logger.info("classified %s official by content self-provenance "
+                    "(canonical docs pointer + ownership marker)", url)
         return "official"
     return "community"
 
@@ -106,13 +146,18 @@ def build_facts(
     entry: SourceState,
     official_hosts: tuple[str, ...] = OFFICIAL_HOSTS,
     official_url_prefixes: tuple[str, ...] = OFFICIAL_URL_PREFIXES,
+    content: str | None = None,
 ) -> list[dict]:
-    """Pure transformation: one claims doc + its fetch state -> Validator facts."""
+    """Pure transformation: one claims doc + its fetch state -> Validator facts.
+
+    `content` is the fetched page text (from the fetch cache); it feeds the
+    content-evidence branch of classify_source_type and is never required —
+    without it, classification falls back to the URL rules alone."""
     claims = doc.get("claims")
     if not isinstance(claims, list):
         raise AdapterError("claims doc has no 'claims' list")
     source_type = classify_source_type(entry.url, official_hosts,
-                                       official_url_prefixes)
+                                       official_url_prefixes, content)
     is_changed, last_run = _derive_change(entry, doc)
     facts: list[dict] = []
     for i, claim in enumerate(claims):
@@ -139,12 +184,29 @@ def build_facts(
     return facts
 
 
+def _read_cached_content(cache_dir: str | Path | None,
+                         sha: str) -> str | None:
+    """Deterministic read of the already-fetched page text for one content
+    version (the fetch cache), for content-evidence classification. Missing
+    or unreadable cache simply means: no content evidence available."""
+    if not cache_dir or not sha:
+        return None
+    for ext in (".md", ".html"):
+        path = Path(cache_dir) / f"{sha}{ext}"
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+    return None
+
+
 def adapt_url(
     url: str,
     states: dict[str, SourceState],
     claims_dir: str | Path,
     official_hosts: tuple[str, ...] = OFFICIAL_HOSTS,
     official_url_prefixes: tuple[str, ...] = OFFICIAL_URL_PREFIXES,
+    cache_dir: str | Path | None = None,
 ) -> dict:
     """Adapt one URL; returns {url, status, facts|error} like the other stages."""
     entry = states.get(url)
@@ -168,8 +230,10 @@ def adapt_url(
     if doc.get("status") != "ok" or not isinstance(doc.get("claims"), list):
         return {"url": url, "status": "error",
                 "error": f"claims doc for {sha[:12]}... is not a valid ok extraction"}
+    content = _read_cached_content(cache_dir, sha)
     try:
-        facts = build_facts(doc, entry, official_hosts, official_url_prefixes)
+        facts = build_facts(doc, entry, official_hosts, official_url_prefixes,
+                            content)
     except AdapterError as exc:
         return {"url": url, "status": "error", "error": str(exc)}
     logger.info("adapted %s: %d facts (source_type=%s, is_changed=%s)",
@@ -201,7 +265,8 @@ def main(
 
     states = load_state(state_path or DEFAULT_STATE_PATH)
     urls = args.urls or list(states)
-    results = [adapt_url(url, states, claims_path or DEFAULT_CLAIMS_PATH)
+    results = [adapt_url(url, states, claims_path or DEFAULT_CLAIMS_PATH,
+                         cache_dir=DEFAULT_CACHE_PATH)
                for url in urls]
 
     ok = [r for r in results if r["status"] == "ok"]

@@ -58,6 +58,118 @@ class ClassifyTests(unittest.TestCase):
             self.assertEqual(classify_source_type(url), "community")
 
 
+# Verbatim excerpt of the real fetched README of Amazon's
+# ads-advanced-tools-docs repository (raw.githubusercontent.com transport) —
+# the exact source the review found was wrongly rejected as community.
+AMAZON_DOCS_README = """# Amazon Ads advanced tools docs
+This repository contains resources related to Amazon Ads advanced tools, including the Amazon Ads API and bulk operations.
+For complete documentation on Amazon Ads advanced tools, see the [Amazon Ads advanced tools center](https://advertising.amazon.com/API/docs/en-us/).
+"""
+
+UNRELATED_README = """# my hobby project
+A tool I wrote for fun. See my blog at https://blog.example/writing for more.
+This project is not affiliated with anyone.
+"""
+
+
+class ContentEvidenceClassificationTests(unittest.TestCase):
+    """Review criticism: 'classify sources by page content, not a host list'
+    — a raw.githubusercontent.com URL serving Amazon's own documentation
+    content must not be rejected solely because of its transport."""
+
+    def test_official_amazon_documentation_url(self):
+        # 1. the official docs host is official on URL alone
+        self.assertEqual(
+            classify_source_type("https://advertising.amazon.com/API/docs/en-us"),
+            "official")
+
+    def test_amazon_github_docs_repository(self):
+        # 2. Amazon's GitHub org pages keep the existing URL rule
+        self.assertEqual(
+            classify_source_type("https://github.com/amzn/ads-advanced-tools-docs"),
+            "official")
+
+    def test_raw_github_amazon_docs_content_is_official(self):
+        # 3. raw transport + Amazon's documentation content -> official
+        self.assertEqual(
+            classify_source_type(
+                "https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs"
+                "/main/README.md",
+                content=AMAZON_DOCS_README),
+            "official")
+
+    def test_genuinely_unrelated_github_content_is_community(self):
+        # 4. same transport, unrelated content -> community
+        self.assertEqual(
+            classify_source_type(
+                "https://raw.githubusercontent.com/example/hobby/main/README.md",
+                content=UNRELATED_README),
+            "community")
+        # a page that merely LINKS to Amazon docs in third-person voice,
+        # without an ownership declaration, stays community
+        third_party = ("Great tutorial about the Ads API! Official docs: "
+                       "https://advertising.amazon.com/API/docs/en-us\n")
+        self.assertEqual(
+            classify_source_type("https://blog.example/ads-tutorial",
+                                 content=third_party),
+            "community")
+
+    def test_transport_does_not_determine_authority(self):
+        # 5a. the SAME Amazon-owned content from a different host is still
+        # official (authority follows content, not URL)
+        self.assertEqual(
+            classify_source_type("https://mirror.example/readme.md",
+                                 content=AMAZON_DOCS_README),
+            "official")
+        # 5b. the SAME raw URL with unrelated content is community (the
+        # transport alone never makes a source official)
+        self.assertEqual(
+            classify_source_type(
+                "https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs"
+                "/main/README.md",
+                content=UNRELATED_README),
+            "community")
+
+    def test_content_evidence_requires_both_signals(self):
+        docs_link_only = "See https://advertising.amazon.com/API/docs/en-us.\n"
+        ownership_only = "This repository contains resources.\n"
+        self.assertEqual(
+            classify_source_type("https://example.com/a", content=docs_link_only),
+            "community")
+        self.assertEqual(
+            classify_source_type("https://example.com/b", content=ownership_only),
+            "community")
+
+    def test_adapt_url_uses_cached_content_for_classification(self):
+        # end to end at adapter level: the cache file provides the evidence
+        import hashlib
+        import tempfile
+        from pathlib import Path
+        content = AMAZON_DOCS_README
+        sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        url = "https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md"
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "cache").mkdir()
+            (base / "cache" / f"{sha}.md").write_text(content, encoding="utf-8")
+            (base / "claims").mkdir()
+            (base / "claims" / f"{sha}.json").write_text(json.dumps({
+                "schema_version": 1, "source_url": url, "sha256": sha,
+                "fetched_at": "2026-09-29T00:00:00+00:00",
+                "extracted_at": "2026-09-29T00:00:00+00:00", "status": "ok",
+                "claims": [{"claim": "The docs repository exists.",
+                            "quote": "Amazon Ads advanced tools docs",
+                            "topic_hint": "docs-repo", "confidence": "high"}],
+            }), encoding="utf-8")
+            states = {url: SourceState(url=url, status="ok",
+                                       fetched_at="2026-09-29T00:00:00+00:00",
+                                       sha256=sha)}
+            result = adapt_url(url, states, base / "claims",
+                               cache_dir=base / "cache")
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["facts"][0]["source_type"], "official")
+
+
 class BuildFactsTests(unittest.TestCase):
     def test_fact_shape_matches_validator_input(self):
         facts = build_facts(doc(), state())
