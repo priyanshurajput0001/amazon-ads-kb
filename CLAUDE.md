@@ -26,9 +26,11 @@ applied.
    quote.
 3. **Relevance gate** — drop claims that are not about Amazon Ads /
    advertising APIs / seller advertising tooling: deterministic keyword
-   lists first, ONE Claude yes/no only for borderline claims (verdicts
-   cached in `state/gate_cache.json`), every drop logged with its reason
-   to `state/dropped.json`. Fail-open: a broken seam keeps the claim.
+   lists first, ONE Claude yes/no only for borderline claims, the verdict
+   cached in `state/gate_cache.json` keyed by the claim text and replayed
+   on later runs (a shipped file the pipeline regenerates), every drop
+   logged with its reason to `state/dropped.json`. Fail-open: a broken
+   seam keeps the claim.
 4. **Adapter** — deterministic reshaping of claims into Validator facts
    (source typing, dates, stability signals).
 5. **Validate** — score each fact with fixed trust arithmetic; stamp it
@@ -122,8 +124,11 @@ source must update the same document, not create a new one).
   (`claude -p --agent <name>`); the relevance-gate and concept-match
   seams are plain one-shot prompts. Every seam is fakeable, so tests run
   fully offline.
-- `.claude/skills/` holds loadable SKILL.md reference guides for each
-  stage plus the `ingest <url>, update the bundle` command definition.
+- `.claude/skills/` holds eleven loadable SKILL.md folders: a reference
+  guide for every stage (discover, fetcher, extractor, relevance-gate,
+  adapter, validator, merger, publisher, orchestrate), a validation-rules
+  reference, and the `ingest <url>, update the bundle` command
+  definition.
 - `.claude/settings.json` registers a PreToolUse hook (Write|Edit) that
   runs `scripts/lint_bundle.py --pretooluse`: a write into `knowledge/`
   is applied to a copy of the bundle and blocked (exit 2) if the copy

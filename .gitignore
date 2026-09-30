@@ -8,4 +8,3 @@
 .DS_Store
 __pycache__/
 *.py[cod]
-state/gate_cache.json

@@ -1,0 +1,284 @@
+# Third source type: live runs (real output, 2026-09-30)
+# Procedure: the prescribed orchestrator command was run once; the
+# release-notes fallback URL once (both release-notes pages exceed the
+# extractor seam's 300s timeout on first attempt); then the SAME command
+# was re-run once for the no-op contract check. All output below is from
+# the actual commands. A trailing section records what was verified.
+
+## RUN 1 — the prescribed command (completed, exit 0, ~13.5 min)
+
+    $ python3 -m pipeline.orchestrate https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml
+
+    WARNING pipeline.orchestrate: https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml: extract failed — stopping this URL (LLM extraction failed: LLM timed out after 300s)
+    INFO pipeline.adapter: classified https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md official by content self-provenance (canonical docs pointer + ownership marker)
+    INFO pipeline.adapter: adapted https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md: 7 facts (source_type=official, is_changed=Y)
+    INFO pipeline.validator: decision url=https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md group=topic:amazon-ads-advanced-tools-overview score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md group=topic:amazon-ads-api-documentation score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md group=topic:amazon-ads-api-postman-collections score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md group=topic:amazon-ads-api-postman-collections score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md group=topic:amazon-marketing-stream-cloudformation score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md group=topic:amazon-ads-advanced-tools-docs-support score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md group=topic:amazon-ads-advanced-tools-license score=0.60 status=valid rule=score-band
+    INFO pipeline.merger: concept amazon-marketing-cloud-and-stream: 5 facts, 0 conflicts
+    INFO pipeline.merger: concept github-repos-and-sdks: 13 facts, 0 conflicts
+    INFO pipeline.merger: concept mcp-server-and-developer-tools: 6 facts, 0 conflicts
+    INFO pipeline.publisher: updated amazon-marketing-cloud-and-stream (5 facts)
+    INFO pipeline.publisher: updated github-repos-and-sdks (13 facts)
+    INFO pipeline.publisher: updated mcp-server-and-developer-tools (6 facts)
+    INFO pipeline.publisher: report: 3 concepts -> 0 published, 3 updated, 0 unchanged, 0 rejected
+    INFO pipeline.orchestrate: committed fetch state for 1 URL(s) after successful publication
+    {
+      "urls": [
+        {
+          "url": "https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md",
+          "fetch": {
+            "ok": true,
+            "verdict": "new",
+            "strategy": "tvly-basic"
+          },
+          "extract": {
+            "status": "ok",
+            "claim_count": 7,
+            "skipped": false
+          },
+          "gate": {
+            "kept": 7,
+            "dropped": 0
+          },
+          "adapter": {
+            "status": "ok",
+            "fact_count": 7
+          }
+        },
+        {
+          "url": "https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml",
+          "fetch": {
+            "ok": true,
+            "verdict": "new",
+            "strategy": "tvly-basic"
+          },
+          "extract": {
+            "status": "error",
+            "claim_count": null,
+            "skipped": false
+          },
+          "stopped_at": "extract",
+          "error": "LLM extraction failed: LLM timed out after 300s"
+        }
+      ],
+      "stages_executed": [
+        "fetch",
+        "extract",
+        "gate",
+        "adapter",
+        "validator",
+        "merger",
+        "publisher"
+      ],
+      "facts": {
+        "adapted": 7,
+        "valid": 7,
+        "valid_low_confidence": 0,
+        "rejected": 0
+      },
+      "merge": {
+        "input_facts": 7,
+        "output_concepts": 3,
+        "rejected": 0
+      },
+      "publish": {
+        "input": 3,
+        "published": 0,
+        "updated": 3,
+        "unchanged": 0,
+        "skipped": 0,
+        "index_updated": true,
+        "changelog_updated": true,
+        "documents": [
+          "/Users/priyanshurajput/amazon-ads-kb/knowledge/amazon-marketing-cloud-and-stream.md",
+          "/Users/priyanshurajput/amazon-ads-kb/knowledge/github-repos-and-sdks.md",
+          "/Users/priyanshurajput/amazon-ads-kb/knowledge/mcp-server-and-developer-tools.md"
+        ],
+        "last_run": "2026-09-30T02:26:25+00:00"
+      },
+      "knowledge_bundle_modified": true,
+      "fetch_state_committed": [
+        "https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md"
+      ]
+    }
+
+## FALLBACK — release-notes index via tvly (completed, exit 0; extraction timed out)
+
+    $ python3 -m pipeline.orchestrate https://advertising.amazon.com/API/docs/en-us/release-notes/index
+
+    WARNING pipeline.orchestrate: https://advertising.amazon.com/API/docs/en-us/release-notes/index: extract failed — stopping this URL (LLM extraction failed: LLM timed out after 300s)
+    INFO pipeline.orchestrate: no facts produced; validator/merger/publisher not run
+    {
+      "urls": [
+        {
+          "url": "https://advertising.amazon.com/API/docs/en-us/release-notes/index",
+          "fetch": {
+            "ok": true,
+            "verdict": "new",
+            "strategy": "tvly-basic"
+          },
+          "extract": {
+            "status": "error",
+            "claim_count": null,
+            "skipped": false
+          },
+          "stopped_at": "extract",
+          "error": "LLM extraction failed: LLM timed out after 300s"
+        }
+      ],
+      "stages_executed": [
+        "fetch"
+      ],
+      "knowledge_bundle_modified": false
+    }
+    EXIT=0
+
+## RUN 2 — the SAME command re-run once (no-op contract check)
+
+    $ python3 -m pipeline.orchestrate https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml
+
+    # Outcome: the raw README was UNCHANGED and stopped at fetch (no seam
+    # invoked, log line below). The RSS extraction — a retry, because its
+    # hash is still pending after RUN 1's extraction timeout — succeeded
+    # this time (104 facts, classified official by content), and the run
+    # entered the merger. Merging 104 facts across the taxonomy is
+    # O(pairs) LLM work far beyond every time budget in play, so the run
+    # was killed BEFORE publish. knowledge/ stayed byte-identical
+    # throughout (only state/ files changed). Log as captured:
+
+    INFO pipeline.orchestrate: https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md: unchanged — stopping after fetch
+    INFO pipeline.relevance: dropped off-topic claim (drop-tokens): 'DSP brand suitability Content Exclusion Categories are now available for Twitch,'
+    INFO pipeline.relevance: dropped off-topic claim (drop-tokens): 'Sponsored Brands reserve share of voice enables advertisers to secure top-of-sea'
+    INFO pipeline.relevance: dropped off-topic claim (drop-tokens): 'DSP brand suitability settings launched in open beta with advertiser-level and a'
+    INFO pipeline.adapter: classified https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml official by content self-provenance (canonical docs pointer + ownership marker)
+    INFO pipeline.adapter: adapted https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml: 104 facts (source_type=official, is_changed=Y)
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:inventory-management-unified-apis score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:events-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:unified-reporting score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:unified-reporting-benchmarks score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:asset-based-creative score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-brands-migrations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-brands-migrations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-ads-bulk-exports score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:reach-planning-linear-tv score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:inventory-management-unified-apis score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:inventory-management-unified-apis score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:recommendations-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-ads-bulk-exports score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:unified-reporting score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:unified-reporting-metrics score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-products-reporting score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:manager-account-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:manager-account-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:proposal-management-unified-apis score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-products-reporting score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:media-plan-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-reporting score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:mcp-skills-library score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:account-management-api-deprecations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:account-management-api-deprecations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:linked-accounts-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:marketing-mix-modeling score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:query-advertiser-account score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:inventory-management-unified-apis score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:mcp-server-oauth score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-brands-bulksheets score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-brands-bulksheets score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-brands-bulksheets score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-tactics score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:account-link-invites-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:advertiser-account-management score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-campaign-management score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-products-bulksheets score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:ad-library-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bid-adjustments score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bid-adjustments score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:unified-reporting-dimensions score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:refresh-tokens score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:refresh-tokens score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:amc-mcp score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:benchmarks score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:benchmarks score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:amazon-marketing-cloud score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:marketing-mix-modeling score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:geographic-insights-activation score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:geographic-insights-activation score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:marketing-mix-modeling score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:marketing-mix-modeling score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bulk-operations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:reporting-api-reach-frequency score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-pacing score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-pacing score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:mcp-server score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:mcp-server score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:mcp-server score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:brand-stores-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-brands-collections score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:v2-api-deprecations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:v2-api-deprecations score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-brands-bid-adjustments score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-brands-bid-adjustments score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:amazon-marketing-stream score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:consent-signals score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:consent-signals score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-creative-management score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:campaign-management-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:campaign-management-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:prime-video-channel-insights score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:benchmarks score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:reporting-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:amc-aws-clean-rooms score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:amc-aws-clean-rooms score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:amazon-live-signals-amc score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:amc-your-garage-dataset score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-forecasting-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:geographic-insights-activation score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-brands-v3-v4-migration score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:branded-searches-attribution score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-supply-sources score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-supply-sources score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:sponsored-display score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-flights score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:events-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:events-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:dsp-bid-adjustments score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:amazon-marketing-stream score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:commitments-api score=0.60 status=valid rule=score-band
+    INFO pipeline.validator: decision url=https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml group=topic:amc-ncs-cpg-insights score=0.60 status=valid rule=score-band
+
+## VERIFICATION (after RUN 1, before and after RUN 2)
+
+    citations in knowledge/ frontmatter:
+      cited: knowledge/CHANGELOG.md
+      cited: knowledge/amazon-marketing-cloud-and-stream.md
+      cited: knowledge/github-repos-and-sdks.md
+      cited: knowledge/mcp-server-and-developer-tools.md
+    official-by-content classification (from RUN 1 log):
+      INFO pipeline.adapter: classified https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md official by content self-provenance (canonical docs pointer + ownership marker)
+    release-notes/RSS source cited: NONE — both release-notes pages
+      (RSS feed 70KB, index page 707KB) exceeded the extractor seam's
+      300s timeout on their publishing attempts (RUN 1, FALLBACK); the
+      RUN 2 retry extracted successfully but was killed before merge/
+      publish to respect the time budget.
+    fetch_state.json: raw README COMMITTED; RSS + release-notes/index PENDING
+    doc count: 15 (range 10-15 OK)
+    knowledge/ lint clean (/Users/priyanshurajput/amazon-ads-kb/knowledge)
+    OK
+    no-op proof: 'https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md: unchanged — stopping after fetch'
+    knowledge/ manifest diff across RUN 2: no knowledge/ file changed

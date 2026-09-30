@@ -1,0 +1,52 @@
+{
+  "claims": [
+    {
+      "claim": "The amzn/ads-advanced-tools-docs repository contains resources related to Amazon Ads advanced tools, including the Amazon Ads API and bulk operations.",
+      "confidence": "high",
+      "quote": "This repository contains resources related to Amazon Ads advanced tools, including the Amazon Ads API and bulk operations.",
+      "topic_hint": "amazon-ads-advanced-tools-overview"
+    },
+    {
+      "claim": "Complete documentation on Amazon Ads advanced tools is available at the Amazon Ads advanced tools center at https://advertising.amazon.com/API/docs/en-us/.",
+      "confidence": "high",
+      "quote": "For complete documentation on Amazon Ads advanced tools, see the [Amazon Ads advanced tools center](https://advertising.amazon.com/API/docs/en-us/).",
+      "topic_hint": "amazon-ads-api-documentation"
+    },
+    {
+      "claim": "The ads-advanced-tools-docs repository hosts Postman collections, code artifacts, and other resources that supplement the Amazon Ads advanced tools documentation.",
+      "confidence": "high",
+      "quote": "This repository will be home to Postman collections, code artifacts, and other resources to supplement the documentation.",
+      "topic_hint": "amazon-ads-api-postman-collections"
+    },
+    {
+      "claim": "The ads-advanced-tools-docs repository includes Amazon Ads API Postman collections.",
+      "confidence": "high",
+      "quote": "[Amazon Ads API Postman collections](postman)",
+      "topic_hint": "amazon-ads-api-postman-collections"
+    },
+    {
+      "claim": "The ads-advanced-tools-docs repository includes an Amazon Marketing Stream CloudFormation template.",
+      "confidence": "high",
+      "quote": "[Amazon Marketing Stream CloudFormation template](amazon\\_marketing\\_stream)",
+      "topic_hint": "amazon-marketing-stream-cloudformation"
+    },
+    {
+      "claim": "Amazon's team monitors incoming issues on the ads-advanced-tools-docs repository to continuously improve the documentation.",
+      "confidence": "medium",
+      "quote": "Our team will monitor incoming issues to continuously improve the documentation.",
+      "topic_hint": "amazon-ads-advanced-tools-docs-support"
+    },
+    {
+      "claim": "The ads-advanced-tools-docs library is licensed under the MIT-0 License.",
+      "confidence": "high",
+      "quote": "This library is licensed under the MIT-0 License.",
+      "topic_hint": "amazon-ads-advanced-tools-license"
+    }
+  ],
+  "extracted_at": "2026-09-30T02:26:25+00:00",
+  "fetched_at": "2026-09-30T02:26:25+00:00",
+  "schema_version": 1,
+  "sha256": "2288633b4a03d6d9d98e1a10a3395389e130a77175bae1164b7845cbc484b0d7",
+  "source_url": "https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md",
+  "status": "ok"
+}

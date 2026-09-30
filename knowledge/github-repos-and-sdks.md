@@ -6,9 +6,10 @@ sources:
   - https://advertising.amazon.com/API/docs/en-us/guides/overview
   - https://advertising.amazon.com/about-api
   - https://github.com/amzn
+  - https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md
 confidence: high
 status: official
-last_checked: 2026-09-29
+last_checked: 2026-09-30
 ---
 
 # GitHub Repositories and SDKs
@@ -80,11 +81,40 @@ last_checked: 2026-09-29
   - first_seen: 2026-09-27
   - sources: https://github.com/amzn (official, fetched 2026-09-27T18:52:32+00:00)
 
+- The amzn/ads-advanced-tools-docs repository contains resources related to Amazon Ads advanced tools, including the Amazon Ads API and bulk operations.
+  - confidence_score: 0.60
+  - status: valid
+  - resolution: single_source
+  - first_seen: 2026-09-30
+  - sources: https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md (official, fetched 2026-09-30T02:26:25+00:00)
+
+- The ads-advanced-tools-docs repository includes Amazon Ads API Postman collections.
+  - confidence_score: 0.60
+  - status: valid
+  - resolution: single_source
+  - first_seen: 2026-09-30
+  - sources: https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md (official, fetched 2026-09-30T02:26:25+00:00)
+
+- Amazon's team monitors incoming issues on the ads-advanced-tools-docs repository to continuously improve the documentation.
+  - confidence_score: 0.60
+  - status: valid
+  - resolution: single_source
+  - first_seen: 2026-09-30
+  - sources: https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md (official, fetched 2026-09-30T02:26:25+00:00)
+
+- The ads-advanced-tools-docs library is licensed under the MIT-0 License.
+  - confidence_score: 0.60
+  - status: valid
+  - resolution: single_source
+  - first_seen: 2026-09-30
+  - sources: https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md (official, fetched 2026-09-30T02:26:25+00:00)
+
 ## Sources
 
 - https://advertising.amazon.com/API/docs/en-us/guides/overview — official, fetched 2026-09-27T10:33:46+00:00 (confirmed 1 fact)
 - https://advertising.amazon.com/about-api — official, fetched 2026-09-27T05:33:54+00:00 (confirmed 1 fact)
 - https://github.com/amzn — official, fetched 2026-09-27T04:03:52+00:00 (confirmed 8 facts)
+- https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md — official, fetched 2026-09-30T02:26:25+00:00 (confirmed 4 facts)
 
 ## Related
 

@@ -13,6 +13,7 @@ Pinned behaviors:
   - the gate sits between Extract and Adapter in the orchestrator
 """
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -153,6 +154,86 @@ class FilterClaimsTests(unittest.TestCase):
                           dropped_path=Path(tmp) / "dropped.json",
                           cache_path=Path(tmp) / "gate_cache.json")
         self.assertEqual(json.dumps(doc, sort_keys=True), snapshot)
+
+
+class ShippedCacheReplayTests(unittest.TestCase):
+    """Step 3 (review 3): `state/gate_cache.json` ships with the repo. A
+    fresh clone must replay every recorded borderline verdict with NO LLM
+    call at all — proven here by a seam that RAISES: without the shipped
+    cache the fail-open path would keep every borderline claim and stamp it
+    `decided_by: 'error'`; with the shipped cache plus drop log the gate is
+    deterministic across machines and rebuilds."""
+
+    BORDERLINE_KEPT = BORDERLINE
+    BORDERLINE_DROPPED = ("The organization page lists its location as "
+                          "Seattle, Washington.")
+
+    def _shipped_state(self, tmp):
+        """The cache and drop log exactly as the pipeline writes them."""
+        cache = Path(tmp) / "gate_cache.json"
+        dropped = Path(tmp) / "dropped.json"
+        entries = {}
+        for claim, keep in ((self.BORDERLINE_KEPT, True),
+                            (self.BORDERLINE_DROPPED, False)):
+            sha = hashlib.sha256(claim.encode("utf-8")).hexdigest()
+            entries[sha] = {"keep": keep,
+                            "reason": "borderline claim judged by the LLM seam",
+                            "url": URL, "date": "2026-09-28"}
+        cache.write_text(
+            json.dumps(entries, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8")
+        log = {}
+        for claim, reason, decided_by in (
+                (OFF_TOPIC[0], "off-topic token(s): alexa", "drop-tokens"),
+                (self.BORDERLINE_DROPPED,
+                 "borderline claim judged by the LLM seam", "llm")):
+            key = hashlib.sha256(
+                f"{URL}|{claim}".encode("utf-8")).hexdigest()
+            log[key] = {"claim": claim, "url": URL, "reason": reason,
+                        "decided_by": decided_by, "date": "2026-09-28"}
+        dropped.write_text(
+            json.dumps(log, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8")
+        return cache, dropped
+
+    def _doc(self):
+        return {"source_url": URL, "claims": [
+            {"claim": c, "quote": "q", "topic_hint": "h",
+             "confidence": "high"}
+            for c in OFF_TOPIC[:1] + ON_TOPIC[:1]
+            + [self.BORDERLINE_KEPT, self.BORDERLINE_DROPPED]]}
+
+    def test_replay_is_deterministic_with_the_seam_raising(self):
+        from pipeline.relevance import GateError
+
+        def exploding(claim):
+            raise GateError("no LLM backend available (claude CLI not found)")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache, dropped = self._shipped_state(tmp)
+            log_before = dropped.read_bytes()
+            first = filter_claims(self._doc(), llm=exploding,
+                                  dropped_path=dropped, cache_path=cache,
+                                  today="2026-10-05")
+            second = filter_claims(self._doc(), llm=exploding,
+                                   dropped_path=dropped, cache_path=cache,
+                                   today="2026-10-05")
+            # deterministic: two replays agree exactly
+            self.assertEqual(first, second)
+            kept, dropped_records = first
+            # off-topic dropped by tokens; on-topic kept by allow-list;
+            # borderline kept/dropped exactly per the shipped verdicts —
+            # NOT per the fail-open default the raising seam would give
+            self.assertEqual([c["claim"] for c in kept],
+                             [ON_TOPIC[0], self.BORDERLINE_KEPT])
+            self.assertEqual([r["claim"] for r in dropped_records],
+                             [OFF_TOPIC[0], self.BORDERLINE_DROPPED])
+            self.assertEqual(dropped_records[1]["decided_by"], "llm-cache")
+            # the seam was never consulted: no fail-open 'error' verdicts
+            self.assertTrue(all(r["decided_by"] != "error"
+                                for r in dropped_records))
+            # and the shipped drop log is untouched by the replay
+            self.assertEqual(dropped.read_bytes(), log_before)
 
 
 class GateInOrchestratorTests(unittest.TestCase):

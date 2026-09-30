@@ -1,4 +1,5 @@
 # Changelog
+> Note: entries dated before 2026-09-26 that reference ids like `kb-...` or `amazon-ads-api-overview` refer to documents from an earlier fragment-level design that no longer exist. They are kept as legacy history.
 
 ## 2026-09-26
 - **amazon-ads-api-overview** — created. Initial extraction of the official
@@ -289,3 +290,11 @@
   Sources: https://github.com/amzn
 - **sponsored-display** — created. 2 facts, 0 recorded conflicts. resolutions: single_source.
   Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview
+
+## 2026-09-30
+- **amazon-marketing-cloud-and-stream** — updated. 5 facts, 0 recorded conflicts. resolutions: single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us, https://advertising.amazon.com/API/docs/en-us/guides/overview, https://advertising.amazon.com/about-api, https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md
+- **github-repos-and-sdks** — updated. 13 facts, 0 recorded conflicts. resolutions: duplicate_merged, single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us/guides/overview, https://advertising.amazon.com/about-api, https://github.com/amzn, https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md
+- **mcp-server-and-developer-tools** — updated. 6 facts, 0 recorded conflicts. resolutions: duplicate_merged, single_source.
+  Sources: https://advertising.amazon.com/API/docs/en-us, https://advertising.amazon.com/about-api, https://github.com/amzn, https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md

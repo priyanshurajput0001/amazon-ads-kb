@@ -34,5 +34,11 @@
     "sha256": "7cc719d9dc188cf5c4431013bb91551adc341901972bccdbe1c1b46663cd727a",
     "status": "ok",
     "strategy": "tvly-basic"
+  },
+  "https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md": {
+    "fetched_at": "2026-09-30T02:46:32+00:00",
+    "sha256": "2288633b4a03d6d9d98e1a10a3395389e130a77175bae1164b7845cbc484b0d7",
+    "status": "ok",
+    "strategy": "tvly-basic"
   }
 }

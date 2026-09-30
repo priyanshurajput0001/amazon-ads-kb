@@ -7,8 +7,9 @@ I'd improve, how Claude Code was used, and two retrospective sections.
 
 ## 1. Architecture and data flow
 
-One deterministic driver sequences seven stages; every stage is a Python
-module under `pipeline/`, every LLM judgment is an isolated one-shot seam.
+One deterministic driver sequences eight stages (Discover optional); every
+stage is a Python module under `pipeline/`, every LLM judgment is an
+isolated one-shot seam.
 
 ```
 discover (optional)   python3 -m pipeline.orchestrate --discover URL...
@@ -130,10 +131,22 @@ extractor is never invoked, the bundle is byte-identical.
   (the direct+HTML path only converts server-rendered pages).
 - Discovery reads only already-cached seed pages (plus optional tvly
   search); it does not crawl.
+- The catch-all cap only splits topics that DECLARE sub-topics.
+  `api-access-and-onboarding` declares none, so it currently holds 13
+  facts — one over the 12-fact cap — and `split_over_cap` can only log a
+  warning. Splitting it is a pending taxonomy decision, not a code fix.
 - `community_agree_count` is always 0 — no stage records people-agreement
   data yet; the scoring supports it when one does.
 - The validator's similarity bands are honest heuristics, not
   understanding; ties in keyword routing rely on one LLM call.
+- The release-notes sources were attempted but NOT ingested: the
+  release-notes index page and the ad-api RSS feed both fetched and
+  converted fine (feed conversion is shown in
+  `evidence/html-conversion.txt`), but the extractor seam timed out at
+  300 s on the 707 KB index page and the 70 KB feed, so neither ever
+  published. The raw GitHub README is the third source kind actually
+  shipped. Ingesting those pages needs chunked extraction or a longer
+  seam timeout — both unplanned.
 - Historical claims files accumulate forever in `state/claims/` (one per
   content version) — intentional provenance, but unbounded.
 
@@ -145,8 +158,10 @@ extractor is never invoked, the bundle is byte-identical.
    superseded) alongside CHANGELOG for programmatic review.
 3. Add a `--dry-run` to orchestrate that stops before publish and prints
    the would-be writes.
-4. Promote the remaining two single-fact topics when their sources grow
-  (release-notes ingestion does this for `api-release-notes`).
+4. Promote the remaining two single-fact topics when their sources grow —
+   blocked for `api-release-notes` until release-notes ingestion works
+   (see the limitation above: both release-notes pages currently exceed
+   the extractor seam's 300 s timeout).
 
 ## 8. How Claude Code was used
 
@@ -155,8 +170,10 @@ extractor is never invoked, the bundle is byte-identical.
   Python stages pin via `claude -p --agent <name>`. The gate and
   concept-match seams are single yes/no prompts without agent files.
 - **Skills** (`.claude/skills/`): `ingest-update-bundle` (the user-facing
-  command definition) plus seven stage reference guides and a
-  validation-rules reference — all loadable SKILL.md folders.
+  command definition) plus nine stage reference guides (discover, fetcher,
+  extractor, relevance-gate, adapter, validator, merger, publisher,
+  orchestrate) and a validation-rules reference — eleven loadable SKILL.md
+  folders.
 - **Hook**: PreToolUse on Write|Edit runs `scripts/lint_bundle.py
   --pretooluse`, which applies the proposed write to a copy of `knowledge/`
   and blocks it if the copy fails the OKF/concept lint (frontmatter, type,
@@ -171,7 +188,8 @@ extractor is never invoked, the bundle is byte-identical.
 - The 37-document bundle was not an extraction problem but an *identity*
   problem: sentence-derived ids made every rewording a new document. One
   fixed topic taxonomy collapsed it to 15 documents without losing a fact —
-  the same 76 facts, redistributed.
+  the same 76 facts, redistributed (the bundle has since grown to 80 facts
+  as the raw GitHub source merged in).
 - The biggest false conflict came from my own deterministic tripwire: a
   negation inside an audience phrase ("advertisers that do not sell on
   Amazon") looked exactly like "X vs not X" to a token comparison.

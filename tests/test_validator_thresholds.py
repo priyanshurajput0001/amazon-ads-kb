@@ -14,10 +14,20 @@ Pinned thresholds:
   COMMUNITY_PEOPLE_MIN 3     (>= earns the 0.30 community base)
   AGREE_MIN            0.80  (token-set Jaccard: agree)
   CONFLICT_MIN         0.50  (below: unrelated)
+  FLIP_MIN             0.50  (merger: numeric-flip conflict floor)
+  CANDIDATE_MIN        0.30  (concept matching: LLM-candidate floor)
+
+Review 3 found one-step mutations of all of these that kept the suite green
+(the merger/concept tests read the constant back from the module, which is
+self-consistent, not a pin). The cases below pin the boundaries with literal
+expected values so any one-step move in either direction fails.
 """
 
 import unittest
 
+from pipeline import concepts, validator
+from pipeline.concepts import canonical_tokens
+from pipeline.merger import _classify_deterministic
 from pipeline.validator import (
     _classify_pair,
     _profile,
@@ -254,6 +264,156 @@ class ValidatorThresholdMutationGuards(unittest.TestCase):
         self.assertEqual(out[0]["status"], "valid_low_confidence")
         self.assertIn("official sources materially contradict",
                       out[0]["reason"])
+
+
+class ValidMinDownwardBoundary(unittest.TestCase):
+    """0.55 — the closest reachable score below VALID_MIN (community base
+    0.30 + one corroborating URL 0.15 + stability 0.10). It MUST stay
+    valid_low_confidence: if VALID_MIN were lowered to 0.55 it flips to
+    valid and these tests fail."""
+
+    def test_055_is_valid_low_confidence_not_valid(self):
+        content = "Approval may take one business day."
+        out = validate_facts([
+            fact(content, "https://a.example/x", "community", agree=3,
+                 is_changed="N", last_run="2026-09-20T00:00:00+00:00"),
+            fact(content, "https://b.example/y", "community", agree=3),
+        ])
+        self.assertEqual(out[0]["confidence_score"], 0.55)
+        self.assertEqual(out[0]["status"], "valid_low_confidence")
+
+    def test_040_stable_community_fact_is_valid_low_confidence(self):
+        # 0.30 base + 0.10 stability, single URL — below the band top.
+        status, score = status_of(
+            "Bulksheets exports settle overnight batches.",
+            source_type="community", agree=3, is_changed="N",
+            last_run="2026-09-20T00:00:00+00:00")
+        self.assertEqual((status, score), ("valid_low_confidence", 0.4))
+
+
+class ExactStatusConstantPins(unittest.TestCase):
+    """Literal pins for the two status thresholds. LOW_CONFIDENCE_MIN's
+    downward move is NOT observable through any reachable score (support
+    itself guarantees >= 0.30: an official base is 0.60, a 3-person
+    community base is 0.30, and a <3-person community fact needs a
+    corroborating URL, i.e. 0.15 + 0.15), so only the literal catches it."""
+
+    def test_valid_min_is_exactly_60(self):
+        self.assertEqual(validator.VALID_MIN, 60)
+
+    def test_low_confidence_min_is_exactly_30(self):
+        self.assertEqual(validator.LOW_CONFIDENCE_MIN, 30)
+
+
+class ConflictMinTightBoundaries(unittest.TestCase):
+    """The closest reachable similarities on either side of CONFLICT_MIN:
+    5/11 = 0.4545 (must stay unrelated — catches a lower to 0.45) and
+    6/11 = 0.5455 (must contradict — catches a raise to 0.55)."""
+
+    @staticmethod
+    def pair(a, b):
+        return _classify_pair(_profile(fact(a, "https://a.example/x")),
+                              _profile(fact(b, "https://b.example/y")))
+
+    def test_0454_is_unrelated(self):
+        # shared 5, union 11 — inside (0.45, 0.50).
+        self.assertEqual(
+            self.pair("alpha beta gamma delta epsilon",
+                      "alpha beta gamma delta epsilon zeta eta theta iota "
+                      "kappa lambda"),
+            "unrelated")
+
+    def test_0545_is_contradict(self):
+        # shared 6, union 11 — above 0.50, below 0.55.
+        self.assertEqual(
+            self.pair("alpha beta gamma delta epsilon zeta",
+                      "alpha beta gamma delta epsilon zeta eta theta iota "
+                      "kappa lambda"),
+            "contradict")
+
+
+class FlipMinBoundaries(unittest.TestCase):
+    """Merger FLIP_MIN (0.5): a numeric value flip conflicts only at >= 0.5
+    token overlap. Below/at cases use hand-built overlaps; the existing
+    MIT-0/Apache tests cover the far-above case."""
+
+    def test_numeric_flip_at_0454_overlap_is_undecided(self):
+        # shared 5, union 11 = 0.4545 with a changed value: the flip is NOT
+        # a deterministic conflict — the pair goes to the seam. If FLIP_MIN
+        # were lowered to 0.45 this returns "conflicting" and fails.
+        a = canonical_tokens("quota alpha beta gamma delta 100")
+        b = canonical_tokens("quota alpha beta gamma delta 500 zeta eta "
+                             "theta iota")
+        self.assertIsNone(_classify_deterministic(a, b))
+
+    def test_numeric_flip_at_exactly_050_is_conflicting(self):
+        # shared 5, union 10 = 0.50 exactly, changed value: conflict. If
+        # FLIP_MIN were raised to 0.55 this returns None and fails.
+        a = canonical_tokens("quota alpha beta gamma delta 100 mu nu")
+        b = canonical_tokens("quota alpha beta gamma delta 500 sigma")
+        self.assertEqual(_classify_deterministic(a, b), "conflicting")
+
+
+class CandidateMinBoundaries(unittest.TestCase):
+    """Concept-layer CANDIDATE_MIN (0.30): below it a fact cannot become a
+    candidate (no seam call); at it and above it can. Overlaps are built by
+    hand so the assertions do not read the constant back."""
+
+    EXISTING = "existing-concept"
+
+    def _existing(self, existing_fact):
+        return {self.EXISTING: {
+            "id": self.EXISTING, "title": "Existing Concept",
+            "facts": [{"content": existing_fact}],
+        }}
+
+    def _assign(self, new_content, existing_fact, llm):
+        return concepts.assign_concepts(
+            [{"content": new_content, "topic_hint": None}],
+            self._existing(existing_fact), match_llm=llm)
+
+    def test_overlap_0272_is_not_a_candidate_no_seam_call(self):
+        # shared 3, union 11 = 0.2727 — below the band.
+        calls = []
+
+        def spy(new_claim, title, existing_claims):
+            calls.append(new_claim)
+            return True
+
+        facts, new_concepts = self._assign(
+            "alpha beta gamma delta epsilon zeta",
+            "alpha beta gamma theta iota kappa lambda mu", spy)
+        self.assertEqual(calls, [])
+        self.assertNotEqual(facts[0]["concept_id"], self.EXISTING)
+        self.assertIn(facts[0]["concept_id"], new_concepts)
+
+    def test_overlap_exactly_030_is_a_candidate(self):
+        # shared 3, union 10 = 0.30 — on the boundary.
+        calls = []
+
+        def spy(new_claim, title, existing_claims):
+            calls.append(new_claim)
+            return True
+
+        facts, _ = self._assign(
+            "alpha beta gamma delta epsilon zeta",
+            "alpha beta gamma theta iota kappa lambda", spy)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(facts[0]["concept_id"], self.EXISTING)
+
+    def test_overlap_040_is_a_candidate(self):
+        # shared 4, union 10 = 0.40 — above the band floor.
+        calls = []
+
+        def spy(new_claim, title, existing_claims):
+            calls.append(new_claim)
+            return True
+
+        facts, _ = self._assign(
+            "alpha beta gamma delta epsilon zeta eta",
+            "alpha beta gamma delta theta iota kappa", spy)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(facts[0]["concept_id"], self.EXISTING)
 
 
 if __name__ == "__main__":

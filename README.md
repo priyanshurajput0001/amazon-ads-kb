@@ -314,11 +314,11 @@ Two kinds of evidence back this system:
 
 * **Automated tests.** They cover every deterministic stage: change
   detection (including the two-phase fetch-state commit), trust scoring
-  with pinned threshold-boundary tests, concept matching and identity,
-  merge policy (including conflict retention and unresolved ties),
-  publishing idempotency and atomicity, OKF conformance of the whole
-  bundle, and the orchestration sequencing. They run offline in under a
-  second with `python3 -m unittest discover -s tests`.
+  with pinned threshold-boundary and constant-pin tests, concept matching
+  and identity, merge policy (including conflict retention and unresolved
+  ties), publishing idempotency and atomicity, OKF conformance of the
+  whole bundle, and the orchestration sequencing. They run offline in a
+  couple of seconds with `python3 -m unittest discover -s tests`.
 * **Real-world demonstration runs.** The full pipeline has been exercised
   against real Amazon Ads documentation pages, the Amazon GitHub
   organization, and a raw GitHub source (see `evidence/`), with the real
@@ -327,18 +327,28 @@ Two kinds of evidence back this system:
 
 ## Real-World Proof
 
-Demonstrated on real sources so far:
+Demonstrated on real sources so far. The sources actually cited in
+`knowledge/` today are official Amazon Ads documentation pages
+(`advertising.amazon.com/...`), the Amazon GitHub organization page
+(`github.com/amzn`), and a raw GitHub source file
+(`raw.githubusercontent.com/amzn/...`). The raw GitHub README is the
+third source kind shipped. The release-notes index page and the ad-api
+RSS feed were attempted but NOT ingested: both fetched and converted
+fine (feed conversion is shown in `evidence/html-conversion.txt`), but
+the extractor seam timed out at 300 s on the 707 KB index page and the
+70 KB feed, so neither ever published. Against the shipped sources the
+full pipeline has been shown to:
 
-* multiple real sources of genuinely different types processed end-to-end
-  (official documentation page, GitHub organization page, raw GitHub file)
-* genuinely changed sources re-extracted and folded into the SAME concept
+* process multiple real sources of different types end-to-end (official
+  documentation pages, GitHub organization page, raw GitHub file)
+* re-extract genuinely changed sources and fold them into the SAME concept
   documents, with the old values retained as dated conflicts
-* unchanged sources correctly short-circuited (the AI step provably never
+* short-circuit unchanged sources correctly (the AI step provably never
   ran; the bundle stayed byte-identical)
-* duplicate prevention — re-running never creates copies; reworded claims
+* prevent duplicates — re-running never creates copies; reworded claims
   resolve to the same concept
-* readable concept documents with a valid INDEX and CHANGELOG
-* end-to-end publishing through the single user command
+* publish readable concept documents with a valid INDEX and CHANGELOG
+  end-to-end through the single user command
 
 ## If You Are New To This Project
 

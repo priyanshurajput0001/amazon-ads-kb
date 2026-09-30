@@ -6,9 +6,10 @@ sources:
   - https://advertising.amazon.com/API/docs/en-us
   - https://advertising.amazon.com/API/docs/en-us/guides/overview
   - https://advertising.amazon.com/about-api
+  - https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md
 confidence: high
 status: official
-last_checked: 2026-09-29
+last_checked: 2026-09-30
 ---
 
 # Amazon Marketing Cloud and Stream
@@ -45,11 +46,19 @@ last_checked: 2026-09-29
   - first_seen: 2026-09-27
   - sources: https://advertising.amazon.com/about-api (official, fetched 2026-09-27T05:33:54+00:00)
 
+- The ads-advanced-tools-docs repository includes an Amazon Marketing Stream CloudFormation template.
+  - confidence_score: 0.60
+  - status: valid
+  - resolution: single_source
+  - first_seen: 2026-09-30
+  - sources: https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md (official, fetched 2026-09-30T02:26:25+00:00)
+
 ## Sources
 
 - https://advertising.amazon.com/API/docs/en-us — official, fetched 2026-09-27T05:22:28+00:00 (confirmed 2 facts)
 - https://advertising.amazon.com/API/docs/en-us/guides/overview — official, fetched 2026-09-27T10:33:46+00:00 (confirmed 1 fact)
 - https://advertising.amazon.com/about-api — official, fetched 2026-09-27T05:33:54+00:00 (confirmed 1 fact)
+- https://raw.githubusercontent.com/amzn/ads-advanced-tools-docs/main/README.md — official, fetched 2026-09-30T02:26:25+00:00 (confirmed 1 fact)
 
 ## Related
 

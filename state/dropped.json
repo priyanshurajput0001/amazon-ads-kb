@@ -55,6 +55,13 @@
     "reason": "borderline claim judged by the LLM seam",
     "url": "https://github.com/amzn"
   },
+  "7386674e0d03f35b16941c1d77e033e855df1faa7d9d7797ae78507b605eecc0": {
+    "claim": "DSP brand suitability settings launched in open beta with advertiser-level and ad-group level controls via API, initially available for Twitch inventory.",
+    "date": "2026-09-30",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): twitch",
+    "url": "https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml"
+  },
   "84a3c7e31981014fc3715fb83f0da955dbc557a72b6c101a21652c412d305abf": {
     "claim": "Amazon's alexa-skills-kit-js repository provides SDK and example code for building voice-enabled skills for the Amazon Echo.",
     "date": "2026-09-27",
@@ -69,12 +76,26 @@
     "reason": "borderline claim judged by the LLM seam",
     "url": "https://github.com/amzn"
   },
+  "a9754f03a62998333385ed20725fae67cf248518466d6033d88e8492217bec91": {
+    "claim": "Sponsored Brands reserve share of voice enables advertisers to secure top-of-search (TOS) Sponsored Brands placements for branded keywords at a fixed, upfront price.",
+    "date": "2026-09-30",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): voic",
+    "url": "https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml"
+  },
   "ae0ec60e1f36c4025ade013b4a8fc47107be5fb62c42e74ae02031408ac2cb48": {
     "claim": "Amazon's GitHub organization includes a repository titled \"Amazon Pay API SDK (PHP)\", an SDK for the Amazon Pay API in PHP.",
     "date": "2026-09-27",
     "decided_by": "drop-tokens",
     "reason": "off-topic token(s): pay",
     "url": "https://github.com/amzn"
+  },
+  "bc29ed722a6d9879f4ae25319b1f5b7a4c6310c03a1cf6eda63ecdb92bca813b": {
+    "claim": "DSP brand suitability Content Exclusion Categories are now available for Twitch, third-party web, and mobile inventory on Display and Video media types.",
+    "date": "2026-09-30",
+    "decided_by": "drop-tokens",
+    "reason": "off-topic token(s): twitch",
+    "url": "https://d3a0d0y2hgofx6.cloudfront.net/rss/en-us/ad-api-rss.xml"
   },
   "bc70ff27a3edf8862da400cc6aa64c0d3cffdd8071aac2323fbf638332d09801": {
     "claim": "The most used topics on Amazon's GitHub repositories include amazon, aws, open-source-tooling, security-tools, and zeek-package.",
