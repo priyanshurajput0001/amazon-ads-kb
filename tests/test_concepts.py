@@ -172,6 +172,42 @@ class NoSingleNoDuplicateTests(unittest.TestCase):
         self.assertEqual(calls, [(borderline["content"][:30], 1),
                                   (borderline["content"][:30], 1)])
 
+    def test_two_no_rejection_minting_new_concept_logs_a_warning(self):
+        """Regression (strict review): a fact with an in-band candidate that
+        the seam rejects twice coins a NEW concept — possible duplicate —
+        and that mint must be visible as a WARNING naming the fact and the
+        closest candidate. Merge behaviour itself is unchanged."""
+        existing = {"reporting-api": {
+            "id": "reporting-api", "title": "Reporting Api",
+            "facts": [fact("Export APIs replace the deprecated snapshots APIs.")],
+        }}
+        borderline = fact("Asynchronous report requests are supported at "
+                          "scale by the API.")
+        with self.assertLogs("pipeline.concepts", level="WARNING") as caught:
+            facts, new = concepts.assign_concepts([borderline], existing,
+                                                  match_llm=llm_says_no)
+        self.assertNotEqual(facts[0]["concept_id"], "reporting-api")
+        self.assertIn(facts[0]["concept_id"], new)
+        warning = "\n".join(caught.output)
+        self.assertIn("possible duplicate", warning)
+        self.assertIn("reporting-api", warning)      # the closest candidate
+        self.assertIn(borderline["content"][:30], warning)  # the fact
+
+    def test_new_concept_without_in_band_candidate_does_not_warn(self):
+        """A fact below the candidate band coining a new concept is normal
+        (nothing was rejected); no WARNING may be emitted."""
+        existing = {"license": {
+            "id": "license", "title": "License",
+            "facts": [fact("The repository is licensed under MIT-0.")],
+        }}
+        unrelated = fact("Bulksheets is a spreadsheet-based tool for "
+                         "sponsored ads campaigns.")
+        with self.assertNoLogs("pipeline.concepts", level="WARNING"):
+            facts, new = concepts.assign_concepts([unrelated], existing,
+                                                  match_llm=llm_says_yes)
+        self.assertNotEqual(facts[0]["concept_id"], "license")
+        self.assertEqual(len(new), 1)
+
     def test_retry_uses_the_full_fact_list_not_the_preview(self):
         existing = {"github-repos": {
             "id": "github-repos", "title": "Github Repos",

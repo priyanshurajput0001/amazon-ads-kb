@@ -354,6 +354,10 @@ def assign_concepts(
                     slug, topics_mod.TOPIC_BY_SLUG[slug].title)
 
     # --- Pass 1: match UNROUTED facts against existing concepts ---
+    # A fact rejected by the seam after two 'no's still had in-band
+    # candidates; when such a fact later coins a NEW concept (Pass 3), that
+    # is a potential duplicate mint and must be visible — hence the record.
+    rejected_with_candidates: dict[int, tuple[float, str, str]] = {}
     for fact in facts:
         if "concept_id" in fact:
             continue
@@ -385,6 +389,11 @@ def assign_concepts(
                     break
         if assigned is not None:
             fact["concept_id"] = assigned
+        elif scored and scored[0][0] >= CANDIDATE_MIN:
+            # unassigned despite an in-band candidate: remember the closest
+            # one so Pass 3 can warn if this fact coins a new concept
+            rejected_with_candidates[id(fact)] = (
+                scored[0][0], scored[0][1], fact["content"])
 
     # --- Pass 2: group the still-unassigned facts among themselves ---
     pending = [f for f in facts if "concept_id" not in f]
@@ -435,6 +444,19 @@ def assign_concepts(
         new_concepts[cid] = humanize(cid)
         for member in members:
             member["concept_id"] = cid
+        # A brand-new concept minted from a fact the match seam rejected
+        # twice while an in-band candidate existed is a possible duplicate
+        # document. Behaviour is unchanged (two deliberate 'no's reject the
+        # candidate by design); the mint is only made visible.
+        best = max((rejected_with_candidates[id(m)] for m in members
+                    if id(m) in rejected_with_candidates), default=None)
+        if best is not None:
+            overlap, closest, content = best
+            logger.warning(
+                "coining new concept %r from fact %r that was rejected by "
+                "the match seam twice despite %.2f overlap with existing "
+                "concept %r — possible duplicate; review the taxonomy "
+                "routing", cid, content[:60], overlap, closest)
 
     return facts, new_concepts
 

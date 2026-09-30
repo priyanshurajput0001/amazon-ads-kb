@@ -28,9 +28,11 @@ applied.
    advertising APIs / seller advertising tooling: deterministic keyword
    lists first, ONE Claude yes/no only for borderline claims, the verdict
    cached in `state/gate_cache.json` keyed by the claim text and replayed
-   on later runs (a shipped file the pipeline regenerates), every drop
-   logged with its reason to `state/dropped.json`. Fail-open: a broken
-   seam keeps the claim.
+   on later runs (a shipped file the pipeline regenerates; it currently
+   holds 13 verdicts while 9 recorded borderline claims are not yet
+   cached, so a fresh-clone rebuild still needs live gate calls for
+   those), every drop logged with its reason to `state/dropped.json`.
+   Fail-open: a broken seam keeps the claim.
 4. **Adapter** — deterministic reshaping of claims into Validator facts
    (source typing, dates, stability signals).
 5. **Validate** — score each fact with fixed trust arithmetic; stamp it

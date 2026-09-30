@@ -178,6 +178,21 @@ class PreToolUseHookTests(unittest.TestCase):
         result = run_script(["--pretooluse"], stdin=json.dumps(payload))
         self.assertEqual(result.returncode, 0)
 
+    def test_unreadable_payload_is_blocked(self):
+        # A payload that cannot be parsed cannot be proven to target a path
+        # outside knowledge/, so the hook fails CLOSED (exit 2) with a reason.
+        result = run_script(["--pretooluse"], stdin="not-json{{{")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unreadable payload", result.stderr)
+        self.assertIn("blocking", result.stderr)
+
+    def test_non_write_tools_with_valid_payload_still_pass(self):
+        # Valid JSON naming a tool this hook does not guard -> exit 0.
+        result = run_script(["--pretooluse"],
+                            stdin=json.dumps({"tool_name": "Bash",
+                                              "tool_input": {"command": "ls"}}))
+        self.assertEqual(result.returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

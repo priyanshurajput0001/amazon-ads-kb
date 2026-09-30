@@ -131,22 +131,36 @@ extractor is never invoked, the bundle is byte-identical.
   (the direct+HTML path only converts server-rendered pages).
 - Discovery reads only already-cached seed pages (plus optional tvly
   search); it does not crawl.
-- The catch-all cap only splits topics that DECLARE sub-topics.
-  `api-access-and-onboarding` declares none, so it currently holds 13
-  facts — one over the 12-fact cap — and `split_over_cap` can only log a
-  warning. Splitting it is a pending taxonomy decision, not a code fix.
+- The catch-all cap only splits topics that DECLARE sub-topics. TWO
+  shipped topics declare none and currently hold 13 facts each — one over
+  the 12-fact cap: `api-access-and-onboarding` and
+  `github-repos-and-sdks`. `split_over_cap` can only log a warning for
+  them. Splitting (or re-capping) them is a pending taxonomy decision,
+  not a code fix.
 - `community_agree_count` is always 0 — no stage records people-agreement
   data yet; the scoring supports it when one does.
 - The validator's similarity bands are honest heuristics, not
   understanding; ties in keyword routing rely on one LLM call.
+- Every numeric decision constant in `pipeline/` is value-pinned: the
+  mutation check in `evidence/threshold-mutation-check.txt` mutates all
+  27 constants one step in each direction (54 mutations) and every one
+  turns the suite red.
 - The release-notes sources were attempted but NOT ingested: the
-  release-notes index page and the ad-api RSS feed both fetched and
-  converted fine (feed conversion is shown in
-  `evidence/html-conversion.txt`), but the extractor seam timed out at
-  300 s on the 707 KB index page and the 70 KB feed, so neither ever
-  published. The raw GitHub README is the third source kind actually
-  shipped. Ingesting those pages needs chunked extraction or a longer
-  seam timeout — both unplanned.
+  release-notes index page (a large page — the run log records it at
+  roughly 707 KB, and its converted copy was not retained in
+  `state/cache/`) and the ad-api RSS feed (70 KB converted markdown;
+  the conversion is shown in `evidence/html-conversion.txt`, the cached
+  HTML is 65,590 bytes) both fetched and converted fine, but the
+  extractor seam timed out at 300 s on each — both timeouts are recorded
+  verbatim in `evidence/third-source-run.txt`. Neither ever published.
+  The raw GitHub README is the third source kind actually shipped.
+  Ingesting those pages needs chunked extraction or a longer seam
+  timeout — both unplanned.
+- The gate verdict cache (`state/gate_cache.json`) is not yet complete:
+  it holds 13 cached verdicts, but 9 borderline claims recorded in
+  `state/claims/` are not cached, so a fresh-clone rebuild still needs
+  live gate calls for those 9 — gate determinism across runs is not yet
+  fully offline-replayable.
 - Historical claims files accumulate forever in `state/claims/` (one per
   content version) — intentional provenance, but unbounded.
 

@@ -314,11 +314,18 @@ Two kinds of evidence back this system:
 
 * **Automated tests.** They cover every deterministic stage: change
   detection (including the two-phase fetch-state commit), trust scoring
-  with pinned threshold-boundary and constant-pin tests, concept matching
-  and identity, merge policy (including conflict retention and unresolved
-  ties), publishing idempotency and atomicity, OKF conformance of the
-  whole bundle, and the orchestration sequencing. They run offline in a
-  couple of seconds with `python3 -m unittest discover -s tests`.
+  with pinned threshold-boundary and constant-pin tests (every numeric
+  decision constant in `pipeline/` is pinned: 27 constants, 54 one-step
+  mutations, all red — `evidence/threshold-mutation-check.txt`), concept
+  matching and identity, merge policy (including conflict retention and
+  unresolved ties), publishing idempotency and atomicity, OKF conformance
+  of the whole bundle, and the orchestration sequencing. They run offline
+  in a couple of seconds with `python3 -m unittest discover -s tests`.
+* **Known replayability gap.** The relevance gate's verdict cache
+  (`state/gate_cache.json`) holds 13 verdicts; 9 borderline claims
+  recorded in `state/claims/` are not yet cached, so a fresh-clone
+  rebuild still needs live gate calls for those 9. Gate determinism is
+  therefore not yet fully offline-replayable.
 * **Real-world demonstration runs.** The full pipeline has been exercised
   against real Amazon Ads documentation pages, the Amazon GitHub
   organization, and a raw GitHub source (see `evidence/`), with the real
@@ -334,9 +341,12 @@ Demonstrated on real sources so far. The sources actually cited in
 (`raw.githubusercontent.com/amzn/...`). The raw GitHub README is the
 third source kind shipped. The release-notes index page and the ad-api
 RSS feed were attempted but NOT ingested: both fetched and converted
-fine (feed conversion is shown in `evidence/html-conversion.txt`), but
-the extractor seam timed out at 300 s on the 707 KB index page and the
-70 KB feed, so neither ever published. Against the shipped sources the
+fine (the feed's conversion is shown in `evidence/html-conversion.txt`;
+its cached HTML copy is 65,590 bytes), but the extractor seam timed out
+at 300 s on each — both timeouts are recorded in
+`evidence/third-source-run.txt`, which also logs the index page at
+roughly 707 KB (a large page; its converted copy was not retained in
+the cache). Neither ever published. Against the shipped sources the
 full pipeline has been shown to:
 
 * process multiple real sources of different types end-to-end (official

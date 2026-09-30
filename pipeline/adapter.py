@@ -63,9 +63,13 @@ OFFICIAL_URL_PREFIXES = ("https://github.com/amzn",)  # amzn org root and subpat
 # deterministic, auditable signals:
 #   1. an EXPLICIT ownership marker anywhere in the text, or
 #   2. a SELF-TITLED Amazon artifact: the document's own title/first
-#      heading names an Amazon product (e.g. "# Amazon Ads advanced tools
-#      docs") — third-party projects do not title themselves as Amazon
-#      artifacts.
+#      heading BEGINS with an Amazon product name (e.g. "# Amazon Ads
+#      advanced tools docs") — third-party projects do not title
+#      themselves as Amazon artifacts, and a wrapper that merely MENTIONS
+#      "Amazon Ads" inside its own title (e.g. "Community SDK for Amazon
+#      Ads") is not self-titled as an Amazon artifact. The marker is
+#      anchored to the START of the title, never matched as a substring
+#      mid-title.
 # Generic self-reference phrasing ("this repository contains ...") alone
 # establishes nothing and is deliberately NOT a marker: a community SDK
 # README uses exactly that wording next to a docs link. Deterministic
@@ -104,7 +108,8 @@ def _document_title(text: str) -> str:
 def _declares_amazon_provenance(content: str | None) -> bool:
     """True when the fetched content itself proves Amazon provenance:
     a canonical pointer to the official docs host AND either an explicit
-    ownership marker or an Amazon-product self-title."""
+    ownership marker or an Amazon-product self-title (the title must BEGIN
+    with the product name — a mid-title mention proves nothing)."""
     if not content:
         return False
     text = content.lower()
@@ -113,7 +118,7 @@ def _declares_amazon_provenance(content: str | None) -> bool:
     if any(marker in text for marker in AMAZON_OWNERSHIP_MARKERS):
         return True
     title = _document_title(text)
-    return any(marker in title for marker in AMAZON_TITLE_MARKERS)
+    return any(title.startswith(marker) for marker in AMAZON_TITLE_MARKERS)
 
 
 def classify_source_type(

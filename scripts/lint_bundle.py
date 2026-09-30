@@ -19,7 +19,9 @@ Modes:
       enforced per-write: INDEX.md is regenerated atomically by the
       publisher together with the documents, so a single mid-batch write
       legitimately lags the INDEX — the full-bundle mode above (and the
-      publisher's own gate) enforce it. Exit 2 blocks the tool call.
+      publisher's own gate) enforce it. Exit 2 blocks the tool call. An
+      unreadable/malformed JSON payload also blocks (exit 2): it cannot be
+      proven to target a path outside knowledge/.
 
   python3 scripts/lint_bundle.py --knowledge-dir DIR
       Lint a different bundle directory (used by tests).
@@ -86,8 +88,14 @@ def pretooluse(kdir: Path) -> int:
     try:
         payload = json.loads(sys.stdin.read())
     except json.JSONDecodeError as exc:
-        print(f"lint hook: unreadable payload ({exc}); allowing", file=sys.stderr)
-        return 0
+        # An unreadable payload cannot be proven to target a path OUTSIDE
+        # knowledge/, so the guard fails CLOSED: block and say why. Payloads
+        # that clearly resolve outside knowledge/ (valid JSON, outside path)
+        # still return 0 below.
+        print(f"lint hook: unreadable payload ({exc}); blocking because the "
+              f"target cannot be proven to be outside knowledge/",
+              file=sys.stderr)
+        return 2
     tool = payload.get("tool_name", "")
     if tool not in ("Write", "Edit"):
         return 0

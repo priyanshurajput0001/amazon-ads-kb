@@ -21,6 +21,9 @@ classified official by the unchanged official-host rule).
   documented prerequisites.
 - **260/260 tests passed inside the clean clone's venv** at that point
   (the suite count then; it is 270 after the later test additions).
+  > Annotated 2026-09-30: these figures were captured at the times stated
+  > above and are not refreshed by later test additions; the suite at the
+  > current HEAD runs 399 tests.
 
 ## One-source ingest via the documented user-facing command
 

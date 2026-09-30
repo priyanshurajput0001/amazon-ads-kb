@@ -1,5 +1,5 @@
 # Changelog
-> Note: entries dated before 2026-09-26 that reference ids like `kb-...` or `amazon-ads-api-overview` refer to documents from an earlier fragment-level design that no longer exist. They are kept as legacy history.
+> Note: entries dated before 2026-09-30 that reference ids like `kb-...` or `amazon-ads-api-overview` refer to documents from an earlier fragment-level design that no longer exist. They are kept as legacy history.
 
 ## 2026-09-26
 - **amazon-ads-api-overview** — created. Initial extraction of the official

@@ -429,11 +429,6 @@ def publish_concepts(
     return report
 
 
-# Backwards-compatible alias: the stage still publishes Merger output; only
-# the shape changed from raw facts to concepts.
-publish_facts = publish_concepts
-
-
 # --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 ---
 name: ingest-update-bundle
-description: Run the knowledge pipeline for one or more URLs. Use when the user says "ingest <url>, update the bundle" or asks to ingest URL(s) and update/publish the Amazon Ads knowledge bundle. Runs Fetch → Extract → Adapter → Validator → Merger → Publisher via one driver command, with unchanged sources stopped right after Fetch.
+description: Run the knowledge pipeline for one or more URLs. Use when the user says "ingest <url>, update the bundle" or asks to ingest URL(s) and update/publish the Amazon Ads knowledge bundle. Runs Fetch → Extract → Relevance gate → Adapter → Validator → Merger → Publisher via one driver command, with unchanged sources stopped right after Fetch.
 ---
 
 # Ingest URL(s) and update the knowledge bundle
@@ -25,7 +25,8 @@ report.
    The driver fetches with persistent change detection and per-URL:
    - `unchanged` → stops right after Fetch (the Extractor is never invoked);
    - failed fetch / HTML-only cache → stops and reports the reason;
-   - `new`/`changed` markdown → Extract → Adapter → Validator → Merger
+   - `new`/`changed` markdown → Extract → Relevance gate (off-topic claims
+     dropped, logged to state/dropped.json) → Adapter → Validator → Merger
      (matched against the existing knowledge bundle) → Publisher.
      Extraction, concept matching and pair classification use the real
      `claude` CLI internally and can take several minutes for changed

@@ -1,261 +1,345 @@
-# Threshold mutation check (real run, 2026-09-30 07:49:14)
-# Procedure: in a scratch COPY of the repo (never the original),
-# change one constant by one step, clear __pycache__, run the full
-# offline suite, record the actual result, restore the pristine
-# file. All output below is from the actual commands.
+# Threshold mutation check (real run, 2026-09-30, against the final working tree)
+# Procedure: in a scratch COPY of the repo (never the original), change one
+# numeric decision constant (thresholds, caps, cutoffs, min hits, preview
+# sizes, step sizes) by one step, run the full offline suite, record the
+# actual result, discard the copy. All output below is from the actual runs;
+# the pristine final run is at the end.
 # Requirement: every mutation must turn the suite RED.
+# Scope: 27 constants x 2 directions = 54 mutations. The alias constants
+#   concepts.AUTO_SAME and merger.NEG_FLIP_MIN derive from validator.AGREE_MIN
+#   and are covered by mutating AGREE_MIN. LLM/subprocess timeouts are
+#   operational bounds, not decision constants, and are not mutated.
+# Current test count: 399.
+
+## MUTATION: BASE_OFFICIAL 60 -> 55
+
+RED
+Ran 399 tests
+FAILED (failures=27)
+
+## MUTATION: BASE_OFFICIAL 60 -> 65
+
+RED
+Ran 399 tests
+FAILED (failures=19)
+
+## MUTATION: BASE_COMMUNITY 30 -> 25
+
+RED
+Ran 399 tests
+FAILED (failures=15)
+
+## MUTATION: BASE_COMMUNITY 30 -> 35
+
+RED
+Ran 399 tests
+FAILED (failures=13)
+
+## MUTATION: BASE_COMMUNITY_LOW 15 -> 10
+
+RED
+Ran 399 tests
+FAILED (failures=7)
+
+## MUTATION: BASE_COMMUNITY_LOW 15 -> 20
+
+RED
+Ran 399 tests
+FAILED (failures=6)
+
+## MUTATION: CORROBORATION_STEP 15 -> 10
+
+RED
+Ran 399 tests
+FAILED (failures=20)
+
+## MUTATION: CORROBORATION_STEP 15 -> 20
+
+RED
+Ran 399 tests
+FAILED (failures=13)
+
+## MUTATION: CORROBORATION_MAX 30 -> 25
+
+RED
+Ran 399 tests
+FAILED (failures=12)
+
+## MUTATION: CORROBORATION_MAX 30 -> 35
+
+RED
+Ran 399 tests
+FAILED (failures=5)
+
+## MUTATION: STABILITY_BONUS 10 -> 5
+
+RED
+Ran 399 tests
+FAILED (failures=11)
+
+## MUTATION: STABILITY_BONUS 10 -> 15
+
+RED
+Ran 399 tests
+FAILED (failures=8)
 
 ## MUTATION: VALID_MIN 60 -> 55
 
 RED
-Ran 376 tests in 1.506s
+Ran 399 tests
 FAILED (failures=2)
 
 ## MUTATION: VALID_MIN 60 -> 65
 
 RED
-Ran 376 tests in 1.499s
+Ran 399 tests
 FAILED (failures=15)
 
 ## MUTATION: LOW_CONFIDENCE_MIN 30 -> 25
 
 RED
-Ran 376 tests in 1.507s
+Ran 399 tests
 FAILED (failures=1)
 
 ## MUTATION: LOW_CONFIDENCE_MIN 30 -> 35
 
 RED
-Ran 376 tests in 1.546s
+Ran 399 tests
 FAILED (failures=7)
 
-## MUTATION: CONFLICT_MIN 0.5 -> 0.45
+## MUTATION: COMMUNITY_PEOPLE_MIN 3 -> 2
 
 RED
-Ran 376 tests in 1.538s
-FAILED (failures=1)
+Ran 399 tests
+FAILED (failures=4)
 
-## MUTATION: CONFLICT_MIN 0.5 -> 0.55
+## MUTATION: COMMUNITY_PEOPLE_MIN 3 -> 4
 
 RED
-Ran 376 tests in 1.495s
-FAILED (failures=3)
+Ran 399 tests
+FAILED (failures=15)
 
 ## MUTATION: AGREE_MIN 0.8 -> 0.75
 
 RED
-Ran 376 tests in 1.495s
+Ran 399 tests
 FAILED (failures=1)
 
 ## MUTATION: AGREE_MIN 0.8 -> 0.85
 
 RED
-Ran 376 tests in 1.538s
+Ran 399 tests
 FAILED (failures=2)
 
-## MUTATION: CORROBORATION_STEP 15 -> 10
+## MUTATION: CONFLICT_MIN 0.5 -> 0.45
 
 RED
-Ran 376 tests in 1.560s
-FAILED (failures=20)
-
-## MUTATION: CORROBORATION_MAX 30 -> 25
-
-RED
-Ran 376 tests in 1.501s
-FAILED (failures=12)
-
-## MUTATION: STABILITY_BONUS 10 -> 5
-
-RED
-Ran 376 tests in 1.504s
-FAILED (failures=11)
-
-## MUTATION: COMMUNITY_PEOPLE_MIN 3 -> 2
-
-RED
-Ran 376 tests in 1.542s
-FAILED (failures=4)
-
-## MUTATION: BASE_COMMUNITY_LOW 15 -> 10
-
-RED
-Ran 376 tests in 1.552s
-FAILED (failures=7)
-
-## MUTATION: FLIP_MIN 0.5 -> 0.45
-
-RED
-Ran 376 tests in 1.498s
+Ran 399 tests
 FAILED (failures=1)
 
-## MUTATION: FLIP_MIN 0.5 -> 0.55
+## MUTATION: CONFLICT_MIN 0.5 -> 0.55
 
 RED
-Ran 376 tests in 1.534s
-FAILED (failures=2)
-
-## MUTATION: PAIR_LLM_CAP 60 -> 55
-
-RED
-Ran 376 tests in 1.549s
-FAILED (failures=2)
-
-## MUTATION: PAIR_LLM_CAP 60 -> 65
-
-RED
-Ran 376 tests in 1.535s
-FAILED (failures=2)
+Ran 399 tests
+FAILED (failures=3)
 
 ## MUTATION: CANDIDATE_MIN 0.30 -> 0.25
 
 RED
-Ran 376 tests in 1.503s
+Ran 399 tests
 FAILED (failures=1)
 
 ## MUTATION: CANDIDATE_MIN 0.30 -> 0.35
 
 RED
-Ran 376 tests in 1.545s
-FAILED (failures=2)
+Ran 399 tests
+FAILED (failures=3)
 
 ## MUTATION: HINT_TOKEN_MIN 0.5 -> 0.45
 
 RED
-Ran 376 tests in 1.532s
+Ran 399 tests
 FAILED (failures=2)
 
 ## MUTATION: HINT_TOKEN_MIN 0.5 -> 0.55
 
 RED
-Ran 376 tests in 1.502s
+Ran 399 tests
 FAILED (failures=2)
 
 ## MUTATION: MATCH_PREVIEW 5 -> 4
 
 RED
-Ran 376 tests in 1.497s
+Ran 399 tests
 FAILED (failures=2)
 
 ## MUTATION: MATCH_PREVIEW 5 -> 6
 
 RED
-Ran 376 tests in 1.546s
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: SLUG_MAX 64 -> 63
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: SLUG_MAX 64 -> 65
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: ID_WORDS_MAX 8 -> 7
+
+RED
+Ran 399 tests
+FAILED (failures=3)
+
+## MUTATION: ID_WORDS_MAX 8 -> 9
+
+RED
+Ran 399 tests
 FAILED (failures=2)
 
 ## MUTATION: TOPIC_MIN_HITS 1 -> 0
 
 RED
-Ran 376 tests in 1.541s
+Ran 399 tests
 FAILED (failures=1)
 
 ## MUTATION: TOPIC_MIN_HITS 1 -> 2
 
 RED
-Ran 376 tests in 1.497s
+Ran 399 tests
 FAILED (failures=4)
-
-## MUTATION: SUBTOPIC_MIN_HITS 1 -> 2
-
-RED
-Ran 376 tests in 1.496s
-FAILED (failures=2)
 
 ## MUTATION: SUBTOPIC_MIN_HITS 1 -> 0
 
 RED
-Ran 376 tests in 1.540s
+Ran 399 tests
 FAILED (failures=5)
+
+## MUTATION: SUBTOPIC_MIN_HITS 1 -> 2
+
+RED
+Ran 399 tests
+FAILED (failures=2)
 
 ## MUTATION: MAX_TOPIC_FACTS 12 -> 11
 
 RED
-Ran 376 tests in 1.536s
+Ran 399 tests
 FAILED (failures=2)
 
 ## MUTATION: MAX_TOPIC_FACTS 12 -> 13
 
 RED
-Ran 376 tests in 1.500s
+Ran 399 tests
 FAILED (failures=2)
 
-## After all reverts — full suite on the pristine copy:
-...............WARNING pipeline.adapter: adapt failed for https://never.example/: no content hash in fetch state (never successfully fetched)
-.INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us: 2 facts (source_type=official, is_changed=Y)
-INFO pipeline.adapter: adapter: 1/1 URLs ok, 2 facts total
-................................................................................pairwise LLM cap (60) reached in this concept; 'kappa lambda u8a u8b u8c' <-> 'kappa lambda u9a u9b u9c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u8a u8b u8c' <-> 'kappa lambda u10a u10b u10c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u8a u8b u8c' <-> 'kappa lambda u11a u11b u11c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u9a u9b u9c' <-> 'kappa lambda u10a u10b u10c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u9a u9b u9c' <-> 'kappa lambda u11a u11b u11c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u10a u10b u10c' <-> 'kappa lambda u11a u11b u11c' left to coexist
-...search seam failed (search seam must not run when not requested); skipped
-.search seam failed (search seam must not run when not requested); skipped
-search seam failed (search seam must not run when not requested); skipped
-..search seam failed (search seam must not run when not requested); skipped
-..search seam failed (search seam must not run when not requested); skipped
-................................................................................pairwise LLM cap (60) reached in this concept; 'kappa lambda u8a u8b u8c' <-> 'kappa lambda u9a u9b u9c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u8a u8b u8c' <-> 'kappa lambda u10a u10b u10c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u8a u8b u8c' <-> 'kappa lambda u11a u11b u11c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u9a u9b u9c' <-> 'kappa lambda u10a u10b u10c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u9a u9b u9c' <-> 'kappa lambda u11a u11b u11c' left to coexist
-pairwise LLM cap (60) reached in this concept; 'kappa lambda u10a u10b u10c' <-> 'kappa lambda u11a u11b u11c' left to coexist
-..................INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/test-page: 2 facts (source_type=official, is_changed=Y)
-INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/new-page: 2 facts (source_type=official, is_changed=Y)
-INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/test-page group=topic:sponsored-products-overview score=0.75 status=valid rule=score-band
-INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/test-page group=topic:amazon-ads-api-onboarding score=0.75 status=valid rule=score-band
-INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/new-page group=topic:sponsored-products-overview score=0.75 status=valid rule=score-band
-INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/new-page group=topic:amazon-ads-api-onboarding score=0.75 status=valid rule=score-band
-INFO pipeline.merger: concept api-access-and-onboarding: 1 facts, 0 conflicts
-INFO pipeline.merger: concept programmatic-and-dsp: 1 facts, 0 conflicts
-INFO pipeline.publisher: published api-access-and-onboarding (1 facts)
-INFO pipeline.publisher: published programmatic-and-dsp (1 facts)
-INFO pipeline.publisher: report: 2 concepts -> 2 published, 0 updated, 0 unchanged, 0 rejected
-INFO pipeline.orchestrate: committed fetch state for 2 URL(s) after successful publication
-.INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/test-page: 2 facts (source_type=official, is_changed=Y)
-INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/test-page group=topic:sponsored-products-overview score=0.60 status=valid rule=score-band
-INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/test-page group=topic:amazon-ads-api-onboarding score=0.60 status=valid rule=score-band
-INFO pipeline.merger: concept api-access-and-onboarding: 1 facts, 0 conflicts
-INFO pipeline.merger: concept programmatic-and-dsp: 1 facts, 0 conflicts
-INFO pipeline.publisher: published api-access-and-onboarding (1 facts)
-INFO pipeline.publisher: published programmatic-and-dsp (1 facts)
-INFO pipeline.publisher: report: 2 concepts -> 2 published, 0 updated, 0 unchanged, 0 rejected
-INFO pipeline.orchestrate: committed fetch state for 1 URL(s) after successful publication
-.usage: python3.14 -m unittest [-h] [--phrase TEXT] [--discover] [URL ...]
-python3.14 -m unittest: error: no URLs given (pass URLs or --phrase)
-..usage: python3.14 -m unittest [-h] [--phrase TEXT] [--discover] [URL ...]
-python3.14 -m unittest: error: no URLs given (pass URLs or --phrase)
-.INFO pipeline.adapter: adapted https://advertising.amazon.com/API/docs/en-us/test-page: 2 facts (source_type=official, is_changed=Y)
-INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/test-page group=topic:sponsored-products-overview score=0.60 status=valid rule=score-band
-INFO pipeline.validator: decision url=https://advertising.amazon.com/API/docs/en-us/test-page group=topic:amazon-ads-api-onboarding score=0.60 status=valid rule=score-band
-INFO pipeline.merger: concept api-access-and-onboarding: 1 facts, 0 conflicts
-INFO pipeline.merger: concept programmatic-and-dsp: 1 facts, 0 conflicts
-INFO pipeline.publisher: published api-access-and-onboarding (1 facts)
-INFO pipeline.publisher: published programmatic-and-dsp (1 facts)
-INFO pipeline.publisher: report: 2 concepts -> 2 published, 0 updated, 0 unchanged, 0 rejected
-INFO pipeline.orchestrate: committed fetch state for 1 URL(s) after successful publication
-.https://advertising.amazon.com/API/docs/en-us/test-page: extract failed — stopping this URL (LLM extraction failed: boom)
-.publisher failed — knowledge bundle untouched: disk full
-.publisher failed — knowledge bundle untouched: disk full
-.publisher failed — knowledge bundle untouched: disk full
-.........https://advertising.amazon.com/API/docs/en-us/other-page: extract failed — stopping this URL (LLM extraction failed: boom)
-.https://advertising.amazon.com/API/docs/en-us/test-page: extract failed — stopping this URL (LLM extraction failed: LLM returned invalid JSON)
-.https://advertising.amazon.com/API/docs/en-us/test-page: fetch failed — stopping this URL (all fetch strategies failed)
-.https://advertising.amazon.com/API/docs/en-us/test-page: unusable cache format — stopping this URL
-..https://advertising.amazon.com/API/docs/en-us/other-page: unusable cache format — stopping this URL
-https://blog.example/gone: fetch failed — stopping this URL (all fetch strategies failed)
-.....................................relevance seam failed for "Amazon's GitHub organization (github.com/amzn) lists 176 rep" (claude CLI exited 1); keeping the claim (fail-open)
-.............................topic routing seam failed for 'The reporting API and Amazon Marketing Stream both deliver m' (LLM returned invalid JSON); falling back to amazon-ads-api-overview
-.seam returned unknown topic 'not-a-topic'; falling back to amazon-ads-api-overview
-........INFO pipeline.validator: decision url=https://ads.amazon/a group=auto:0 score=0.60 status=valid rule=score-band
-..INFO pipeline.validator: decision url=https://ads.amazon/a group=auto:0 score=0.60 status=valid rule=score-band
-INFO pipeline.validator: decision url=https://forum.example/t group=auto:1 score=0.30 status=valid_low_confidence rule=score-band reason=confidence score 0.30 is below the 0.60 valid threshold
-.INFO pipeline.validator: decision url=https://ads.amazon/a group=auto:0 score=0.60 status=valid rule=score-band
-.........................................................................
-----------------------------------------------------------------------
-Ran 376 tests in 1.496s
+## MUTATION: FLIP_MIN 0.5 -> 0.45
+
+RED
+Ran 399 tests
+FAILED (failures=1)
+
+## MUTATION: FLIP_MIN 0.5 -> 0.55
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: PAIR_LLM_CAP 60 -> 55
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: PAIR_LLM_CAP 60 -> 65
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: HIGH_MIN 0.60 -> 0.55
+
+RED
+Ran 399 tests
+FAILED (failures=1)
+
+## MUTATION: HIGH_MIN 0.60 -> 0.65
+
+RED
+Ran 399 tests
+FAILED (failures=1)
+
+## MUTATION: MEDIUM_MIN 0.30 -> 0.25
+
+RED
+Ran 399 tests
+FAILED (failures=1)
+
+## MUTATION: MEDIUM_MIN 0.30 -> 0.35
+
+RED
+Ran 399 tests
+FAILED (failures=1)
+
+## MUTATION: RELATED_MIN 0.10 -> 0.05
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: RELATED_MIN 0.10 -> 0.15
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: RELATED_MAX 5 -> 4
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: RELATED_MAX 5 -> 6
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: DEFAULT_CAP 10 -> 9
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: DEFAULT_CAP 10 -> 11
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: MIN_TEXT_CHARS 40 -> 39
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## MUTATION: MIN_TEXT_CHARS 40 -> 41
+
+RED
+Ran 399 tests
+FAILED (failures=2)
+
+## Pristine suite after all reverts (run against the repo):
+Ran 399 tests in 1.792s
 
 OK
 
 ## Mutations still green: NONE
-## Total mutations run: 29
+## Total mutations run: 54 (27 constants, both directions)
+## Total RED: 54

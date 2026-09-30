@@ -157,6 +157,30 @@ class ContentEvidenceClassificationTests(unittest.TestCase):
                                  content=content),
             "community")
 
+    def test_mid_title_amazon_mention_is_not_official(self):
+        # Regression (strict review): a third-party README whose title merely
+        # CONTAINS "Amazon Ads" ("Community SDK for Amazon Ads") must stay
+        # community — the self-title marker is anchored to the START of the
+        # title, so a mid-title mention proves nothing about ownership.
+        content = ("# Community SDK for Amazon Ads\n"
+                   "An unofficial wrapper. Docs: "
+                   "https://advertising.amazon.com/API/docs/en-us\n")
+        self.assertEqual(
+            classify_source_type("https://github.com/indie/ads-sdk",
+                                 content=content),
+            "community")
+
+    def test_leading_amazon_title_is_official(self):
+        # The positive side of the same rule: the document's own title BEGINS
+        # with the Amazon product name -> self-titled Amazon artifact.
+        content = ("# Amazon Ads advanced tools docs\n"
+                   "See https://advertising.amazon.com/API/docs/en-us/ for "
+                   "the documentation.\n")
+        self.assertEqual(
+            classify_source_type("https://mirror.example/readme.md",
+                                 content=content),
+            "official")
+
     def test_transport_does_not_determine_authority(self):
         # 5a. the SAME Amazon-owned content from a different host is still
         # official (authority follows content, not URL)
